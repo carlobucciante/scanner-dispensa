@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scanner Dispensa</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<style>
+  :root {
+    --ground: #F7F6F1;
+    --surface: #FFFFFF;
+    --surface-2: #EFEEE7;
+    --ink: #1D2019;
+    --ink-soft: #6B7065;
+    --line: #DCDAD0;
+    --accent: #2E6B4F;
+    --accent-ink: #FFFFFF;
+    --amber: #9A6206;
+    --amber-bg: #FBF2DE;
+    --laser: #D6453C;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #141713;
+      --surface: #1D211C;
+      --surface-2: #262B25;
+      --ink: #EDEFE8;
+      --ink-soft: #9AA093;
+      --line: #333A32;
+      --accent: #63C08F;
+      --accent-ink: #10160F;
+      --amber: #E0A445;
+      --amber-bg: #2E2718;
+      --laser: #E8635A;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-text-size-adjust: 100%;
+  }
+  img { max-width: 100%; }
+
+  .wrap {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 18px 16px 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  h1 {
+    font-family: Archivo, system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 26px;
+    letter-spacing: -0.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .sub { color: var(--ink-soft); font-size: 13px; margin: 2px 0 0; }
+  .totale {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+  .totale b { font-size: 22px; font-weight: 500; display: block; }
+  .totale span { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    font: inherit; font-weight: 500; font-size: 13px;
+    padding: 7px 14px;
+    border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink);
+    border-radius: 999px; cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .chip:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .camera {
+    position: relative; aspect-ratio: 4 / 3;
+    background: #0D0F0C;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .camera video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .camera.off video { display: none; }
+  .mirino { position: absolute; inset: 14% 8%; border: 2px solid rgba(255,255,255,0.5); border-radius: 6px; pointer-events: none; display: none; }
+  .camera.on .mirino { display: block; }
+  .mirino::after {
+    content: ""; position: absolute; left: 6px; right: 6px; top: 50%;
+    height: 2px; background: var(--laser); box-shadow: 0 0 8px var(--laser);
+    animation: sweep 2.4s ease-in-out infinite;
+  }
+  @keyframes sweep { 0%, 100% { transform: translateY(-38px); } 50% { transform: translateY(38px); } }
+  @media (prefers-reduced-motion: reduce) { .mirino::after { animation: none; } }
+
+  .camera-msg { position: absolute; padding: 20px; text-align: center; color: #E8EAE4; font-size: 14px; max-width: 330px; }
+  .camera-msg b { display: block; font-family: Archivo, system-ui, sans-serif; font-size: 16px; margin-bottom: 6px; }
+  .camera-msg .tecnico {
+    display: block; margin-top: 12px; padding-top: 10px;
+    border-top: 1px solid rgba(232,234,228,0.25);
+    font-family: "IBM Plex Mono", monospace; font-size: 11px;
+    color: #B9BFB2; word-break: break-word;
+  }
+
+  .flash { position: absolute; inset: 0; background: var(--accent); opacity: 0; pointer-events: none; }
+  .flash.go { animation: pop 0.42s ease-out; }
+  @keyframes pop { 0% { opacity: 0.75; } 100% { opacity: 0; } }
+
+  button.primary {
+    font: inherit; font-weight: 600; font-size: 15px;
+    background: var(--accent); color: var(--accent-ink);
+    border: none; border-radius: var(--radius);
+    padding: 13px 18px; cursor: pointer; width: 100%;
+  }
+  button.ghost {
+    font: inherit; font-size: 13px; font-weight: 500;
+    background: transparent; color: var(--ink-soft);
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 10px 14px; cursor: pointer;
+  }
+
+  .azioni-camera { display: flex; gap: 8px; margin-top: 10px; }
+  .azioni-camera button.primary { flex: 1; }
+  .azioni-camera input[type="file"] { display: none; }
+
+  .manuale { display: flex; gap: 8px; }
+  .manuale input {
+    font: inherit; flex: 1; min-width: 0;
+    padding: 11px 12px;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--surface); color: var(--ink);
+  }
+  .manuale input#codice { font-family: "IBM Plex Mono", monospace; letter-spacing: 0.04em; }
+
+  .sfuso { display: grid; grid-template-columns: 78px 1fr auto; gap: 8px; }
+  .sfuso input, .sfuso select {
+    font: inherit; min-width: 0; padding: 11px 10px;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--surface); color: var(--ink);
+  }
+  .sfuso input#sfuso { grid-column: 1 / -1; }
+  .sfuso input#sfuso-qta { text-align: center; font-variant-numeric: tabular-nums; }
+  @media (min-width: 520px) {
+    .sfuso { grid-template-columns: 1fr 78px 130px auto; }
+    .sfuso input#sfuso { grid-column: auto; }
+  }
+
+  .lista { display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .riga { background: var(--surface); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .riga.puntata { background: var(--amber-bg); }
+  .riga .testa { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .riga .nome { font-weight: 600; font-size: 15px; }
+  .riga .nome.cercando { color: var(--ink-soft); font-weight: 500; font-style: italic; }
+  .riga .meta {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px;
+    color: var(--ink-soft); font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em; margin-top: 3px; word-break: break-all;
+  }
+  .riga .meta .sep { opacity: 0.45; margin: 0 5px; }
+  .riga .somma {
+    font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums;
+    font-size: 17px; white-space: nowrap; text-align: right;
+  }
+  .riga .somma.zero { color: var(--amber); }
+  .riga .somma small { display: block; font-family: "IBM Plex Sans", sans-serif; font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-soft); }
+
+  .comando { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .comando > .voce { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-soft); font-weight: 600; min-width: 56px; }
+  .stepper { display: flex; align-items: center; gap: 2px; }
+  .stepper button {
+    font: inherit; font-size: 17px; line-height: 1; width: 34px; height: 34px;
+    border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+    border-radius: 8px; cursor: pointer;
+  }
+  .stepper .q { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; min-width: 32px; text-align: center; font-size: 16px; }
+
+  .frazioni { display: flex; gap: 4px; flex-wrap: wrap; }
+  .frazioni button {
+    font: inherit; font-size: 13px; min-width: 38px; height: 34px; padding: 0 8px;
+    border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+    border-radius: 8px; cursor: pointer;
+  }
+  .frazioni button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .resto {
+    font: inherit; font-size: 14px; width: 92px; padding: 7px 8px; text-align: center;
+    font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--surface); color: var(--ink);
+  }
+
+  .coda { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 2px; }
+  .coda label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-soft); font-weight: 600; }
+  .coda input[type="date"] { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+  .coda .via { font: inherit; font-size: 12px; background: none; border: none; color: var(--ink-soft); cursor: pointer; text-decoration: underline; padding: 6px 0; margin-left: auto; }
+  .riga.scade .coda label { color: var(--amber); }
+
+  .vuoto { background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius); padding: 22px; }
+  .vuoto p { margin: 0 0 10px; color: var(--ink-soft); font-size: 14px; }
+  .vuoto ol { margin: 0; padding-left: 20px; color: var(--ink-soft); font-size: 14px; }
+  .vuoto li { margin-bottom: 5px; }
+  .vuoto li b { color: var(--ink); font-weight: 600; }
+
+  .fine { display: flex; gap: 8px; flex-wrap: wrap; }
+  .fine button.primary { width: auto; flex: 1; min-width: 200px; }
+  .fine input[type="file"] { display: none; }
+
+  .nota { font-size: 12px; color: var(--ink-soft); margin: 0; }
+  .nota.allarme { color: var(--amber); font-weight: 500; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Scanner Dispensa</h1>
+      <p class="sub">Quanto c'è in casa, ripiano per ripiano.</p>
+    </div>
+    <div class="totale"><b id="tot-pezzi">0</b><span id="tot-voci">nessun prodotto</span></div>
+  </header>
+
+  <section>
+    <p class="label">Dove stai guardando</p>
+    <div class="chips" id="chips"></div>
+  </section>
+
+  <section>
+    <div class="camera off" id="camera">
+      <video id="video" playsinline muted></video>
+      <div class="mirino"></div>
+      <div class="flash" id="flash"></div>
+      <div class="camera-msg" id="camera-msg"><b>Fotocamera spenta</b>Accendila e avvicina il codice a barre finché non senti il segnale.</div>
+    </div>
+    <div class="azioni-camera">
+      <button class="primary" id="btn-camera">Accendi la fotocamera</button>
+      <button class="ghost" id="btn-foto">Leggi da una foto</button>
+      <input type="file" id="file-foto" accept="image/*">
+    </div>
+  </section>
+
+  <section>
+    <p class="label">Oppure scrivi il codice a mano</p>
+    <div class="manuale">
+      <input id="codice" inputmode="numeric" placeholder="codice a barre" autocomplete="off">
+      <button class="ghost" id="btn-codice">Aggiungi</button>
+    </div>
+  </section>
+
+  <section>
+    <p class="label">Prodotti sfusi, senza codice</p>
+    <div class="sfuso">
+      <input id="sfuso" placeholder="pomodori, pane, mele…" autocomplete="off">
+      <input id="sfuso-qta" inputmode="decimal" value="1" aria-label="quanto">
+      <select id="sfuso-unita" aria-label="unità di misura">
+        <option value="pz">pezzi</option>
+        <option value="kg">kg</option>
+        <option value="g">grammi</option>
+        <option value="l">litri</option>
+        <option value="ml">ml</option>
+      </select>
+      <button class="ghost" id="btn-sfuso">Aggiungi</button>
+    </div>
+  </section>
+
+  <section>
+    <p class="label">In casa</p>
+    <div id="contenuto"></div>
+    <p class="nota" id="stato" style="margin-top: 10px"></p>
+  </section>
+
+  <section class="fine">
+    <button class="primary" id="btn-csv">Scarica il file per Claude</button>
+    <button class="ghost" id="btn-import">Riparti da un file</button>
+    <button class="ghost" id="btn-svuota">Svuota tutto</button>
+    <input type="file" id="file-import" accept=".csv,text/csv">
+  </section>
+</div>
+
+<script>
+(function () {
+  var LUOGHI = ["DISPENSA", "FRIGO", "FREEZER", "CANTINA"];
+  var dove = "DISPENSA";
+  var items = new Map();
+  var editing = false;
+  var puntato = "";
+  var reader = null;
+  var stream = null;
+  var acceso = false;
+  var motore = "";
+
+  function $(id) { return document.getElementById(id); }
+  var contenuto = $("contenuto"), stato = $("stato"), camera = $("camera"), msg = $("camera-msg");
+
+  /* ---------- numeri ---------- */
+
+  function numero(v, difetto) {
+    var n = parseFloat(String(v).replace(",", "."));
+    return isFinite(n) ? n : (difetto === undefined ? 0 : difetto);
+  }
+
+  function pulito(n) {
+    return Math.round(n * 1000) / 1000;
+  }
+
+  function scritto(n) {
+    return String(pulito(n)).replace(".", ",");
+  }
+
+  /* Legge "500 g", "1,5 L", "6 x 125 g" e ne ricava numero + unità. */
+  function leggiFormato(testo) {
+    var t = String(testo || "").toLowerCase().replace(",", ".");
+    var molt = t.match(/(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(kg|g|gr|l|lt|ml|cl)/);
+    if (molt) {
+      var tot = parseFloat(molt[1]) * parseFloat(molt[2]);
+      return normalizza(tot, molt[3]);
+    }
+    var uno = t.match(/(\d+(?:\.\d+)?)\s*(kg|g|gr|l|lt|ml|cl)\b/);
+    if (uno) { return normalizza(parseFloat(uno[1]), uno[2]); }
+    return null;
+  }
+
+  function normalizza(q, u) {
+    if (u === "gr") u = "g";
+    if (u === "lt") u = "l";
+    if (u === "cl") { q = q * 10; u = "ml"; }
+    return { qta: q, unita: u };
+  }
+
+  /* ---------- memoria ---------- */
+
+  function carica() {
+    try {
+      var raw = JSON.parse(localStorage.getItem("dispensa") || "[]");
+      raw.forEach(function (it) { items.set(it.id, it); });
+    } catch (e) {}
+  }
+
+  function salva() {
+    try { localStorage.setItem("dispensa", JSON.stringify(Array.from(items.values()))); } catch (e) {}
+    render();
+  }
+
+  /* ---------- conti ---------- */
+
+  /* Quanto ce n'è in tutto: le confezioni chiuse più quel che resta nell'aperta. */
+  function totale(it) {
+    if (it.unita === "pz") { return { qta: pulito(it.chiuse + it.aperta), unita: "pz" }; }
+    if (it.confQta > 0) { return { qta: pulito(it.chiuse * it.confQta + it.aperta), unita: it.unita }; }
+    return { qta: pulito(it.aperta), unita: it.unita };
+  }
+
+  function totaleScritto(it) {
+    var t = totale(it);
+    return scritto(t.qta) + (t.unita === "pz" ? (t.qta === 1 ? " pezzo" : " pezzi") : " " + t.unita);
+  }
+
+  /* ---------- interfaccia ---------- */
+
+  function nota(testo, allarme) {
+    stato.textContent = testo || "";
+    stato.className = allarme ? "nota allarme" : "nota";
+  }
+
+  function chips() {
+    var box = $("chips");
+    box.innerHTML = "";
+    LUOGHI.forEach(function (l) {
+      var b = document.createElement("button");
+      b.className = "chip";
+      b.type = "button";
+      b.textContent = l.charAt(0) + l.slice(1).toLowerCase();
+      b.setAttribute("aria-pressed", String(l === dove));
+      b.onclick = function () { dove = l; chips(); };
+      box.appendChild(b);
+    });
+  }
+
+  function ordinati() {
+    return Array.from(items.values()).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+  }
+
+  function render() {
+    if (editing) return;
+    var lista = ordinati();
+    var finiti = lista.filter(function (it) { return totale(it).qta <= 0; }).length;
+    $("tot-pezzi").textContent = lista.length;
+    $("tot-voci").textContent = lista.length === 0 ? "nessun prodotto"
+      : finiti > 0 ? (lista.length === 1 ? "1 prodotto" : "prodotti") + " · " + finiti + " finiti"
+      : (lista.length === 1 ? "prodotto" : "prodotti");
+
+    if (lista.length === 0) {
+      contenuto.innerHTML = '<div class="vuoto"><p>Qui compare quello che hai in casa, con quanto ne resta.</p>' +
+        "<ol><li>Scegli <b>dove</b> stai guardando: dispensa, frigo, freezer o cantina.</li>" +
+        "<li>Passa i codici a barre davanti alla fotocamera: ogni prodotto entra con <b>una confezione chiusa</b>.</li>" +
+        "<li>Se una confezione è <b>aperta</b>, dichiara quanto ne resta: metà, tre quarti, o il peso esatto.</li>" +
+        "<li>Quello che non ha codice — pomodori, pane, mele — lo scrivi a peso qui sopra.</li></ol></div>";
+      return;
+    }
+
+    var el = document.createElement("div");
+    el.className = "lista";
+    lista.forEach(function (it) { el.appendChild(riga(it)); });
+    contenuto.innerHTML = "";
+    contenuto.appendChild(el);
+
+    if (puntato) {
+      var vista = document.getElementById("r-" + puntato);
+      if (vista && vista.scrollIntoView) { vista.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    }
+  }
+
+  function riga(it) {
+    var t = totale(it);
+    var r = document.createElement("div");
+    r.className = "riga" + (it.scadenza ? " scade" : "") + (puntato === it.id ? " puntata" : "");
+    r.id = "r-" + it.id;
+
+    /* intestazione: nome, dati, totale */
+    var testa = document.createElement("div");
+    testa.className = "testa";
+
+    var sx = document.createElement("div");
+    var nome = document.createElement("div");
+    nome.className = "nome" + (it.stato === "cerco" ? " cercando" : "");
+    nome.textContent = it.prodotto || (it.stato === "cerco" ? "cerco il prodotto…" : "prodotto senza nome");
+    sx.appendChild(nome);
+
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    var voci = [];
+    if (it.barcode) voci.push(it.barcode);
+    if (it.marca) voci.push(it.marca);
+    if (it.formato) voci.push(it.formato);
+    voci.push(it.dove.toLowerCase());
+    meta.innerHTML = voci.map(function (v) { return String(v).replace(/[<>&]/g, ""); }).join('<span class="sep">·</span>');
+    sx.appendChild(meta);
+
+    var somma = document.createElement("div");
+    somma.className = "somma" + (t.qta <= 0 ? " zero" : "");
+    somma.innerHTML = "";
+    var forte = document.createElement("span");
+    forte.textContent = t.qta <= 0 ? "finito" : totaleScritto(it);
+    var sotto = document.createElement("small");
+    sotto.textContent = t.qta <= 0 ? "da ricomprare" : "in casa";
+    somma.appendChild(forte);
+    somma.appendChild(sotto);
+
+    testa.appendChild(sx);
+    testa.appendChild(somma);
+    r.appendChild(testa);
+
+    /* confezioni chiuse */
+    if (it.barcode || it.confQta > 0 || it.unita === "pz") {
+      var c = document.createElement("div");
+      c.className = "comando";
+      var etic = document.createElement("span");
+      etic.className = "voce";
+      etic.textContent = it.unita === "pz" ? "Pezzi" : "Chiuse";
+      var st = document.createElement("div");
+      st.className = "stepper";
+      var meno = document.createElement("button");
+      meno.type = "button";
+      meno.textContent = "−";
+      meno.setAttribute("aria-label", "una confezione in meno");
+      meno.onclick = function () {
+        it.chiuse = Math.max(0, it.chiuse - 1);
+        it.ts = Date.now();
+        salva();
+      };
+      var q = document.createElement("span");
+      q.className = "q";
+      q.textContent = it.chiuse;
+      var piu = document.createElement("button");
+      piu.type = "button";
+      piu.textContent = "+";
+      piu.setAttribute("aria-label", "una confezione in più");
+      piu.onclick = function () { it.chiuse += 1; it.ts = Date.now(); salva(); };
+      st.appendChild(meno);
+      st.appendChild(q);
+      st.appendChild(piu);
+      c.appendChild(etic);
+      c.appendChild(st);
+      if (it.confQta > 0 && it.unita !== "pz") {
+        var da = document.createElement("span");
+        da.className = "voce";
+        da.style.minWidth = "auto";
+        da.textContent = "da " + scritto(it.confQta) + " " + it.unita;
+        c.appendChild(da);
+      }
+      r.appendChild(c);
+    }
+
+    /* confezione aperta */
+    if (it.unita !== "pz") {
+      var a = document.createElement("div");
+      a.className = "comando";
+      var etic2 = document.createElement("span");
+      etic2.className = "voce";
+      etic2.textContent = "Aperta";
+
+      var fr = document.createElement("div");
+      fr.className = "frazioni";
+      if (it.confQta > 0) {
+        [["vuota", 0], ["¼", 0.25], ["½", 0.5], ["¾", 0.75], ["piena", 1]].forEach(function (coppia) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.textContent = coppia[0];
+          var valore = pulito(it.confQta * coppia[1]);
+          b.setAttribute("aria-pressed", String(Math.abs(it.aperta - valore) < 0.001));
+          b.onclick = function () { it.aperta = valore; it.ts = Date.now(); salva(); };
+          fr.appendChild(b);
+        });
+      }
+
+      var resto = document.createElement("input");
+      resto.className = "resto";
+      resto.inputMode = "decimal";
+      resto.value = scritto(it.aperta);
+      resto.setAttribute("aria-label", "quanto resta nella confezione aperta");
+      resto.onfocus = function () { editing = true; };
+      resto.onblur = function () { editing = false; };
+      resto.onchange = function () {
+        it.aperta = Math.max(0, numero(resto.value, 0));
+        it.ts = Date.now();
+        editing = false;
+        salva();
+      };
+      var um = document.createElement("span");
+      um.className = "voce";
+      um.style.minWidth = "auto";
+      um.textContent = it.unita;
+
+      a.appendChild(etic2);
+      if (it.confQta > 0) { a.appendChild(fr); }
+      a.appendChild(resto);
+      a.appendChild(um);
+      r.appendChild(a);
+    }
+
+    /* scadenza */
+    var coda = document.createElement("div");
+    coda.className = "coda";
+    var lab = document.createElement("label");
+    lab.textContent = "Scade il";
+    lab.htmlFor = "d-" + it.id;
+    var data = document.createElement("input");
+    data.type = "date";
+    data.id = "d-" + it.id;
+    data.value = it.scadenza || "";
+    data.onfocus = function () { editing = true; };
+    data.onblur = function () { editing = false; };
+    data.onchange = function () { it.scadenza = data.value; editing = false; salva(); };
+    var via = document.createElement("button");
+    via.type = "button";
+    via.className = "via";
+    via.textContent = "togli dalla lista";
+    via.onclick = function () { items.delete(it.id); salva(); };
+    coda.appendChild(lab);
+    coda.appendChild(data);
+    coda.appendChild(via);
+    r.appendChild(coda);
+
+    return r;
+  }
+
+  /* ---------- OpenFoodFacts ---------- */
+
+  function cerca(it) {
+    var url = "https://world.openfoodfacts.org/api/v2/product/" + encodeURIComponent(it.barcode) +
+      "?fields=product_name,product_name_it,brands,quantity,nutriments";
+    fetch(url, { headers: { "Accept": "application/json" } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var p = (d && d.status === 1 && d.product) ? d.product : null;
+        if (!p) {
+          it.stato = "ignoto";
+          salva();
+          nota("Il codice " + it.barcode + " non è in catalogo: scrivi tu il nome nel foglio, il resto resta buono.");
+          return;
+        }
+        var n = p.nutriments || {};
+        it.prodotto = (p.product_name_it || p.product_name || "").trim();
+        it.marca = (p.brands || "").split(",")[0].trim();
+        it.formato = (p.quantity || "").trim();
+        var f = leggiFormato(it.formato);
+        if (f) { it.confQta = f.qta; it.unita = f.unita; }
+        it.kcal = n["energy-kcal_100g"];
+        it.proteine = n.proteins_100g;
+        it.carboidrati = n.carbohydrates_100g;
+        it.grassi = n.fat_100g;
+        it.stato = "ok";
+        salva();
+      })
+      .catch(function () {
+        it.stato = "ignoto";
+        salva();
+        nota("Non riesco a raggiungere il catalogo prodotti: i codici li salvo lo stesso.", true);
+      });
+  }
+
+  /* ---------- aggiunta ---------- */
+
+  function beep(doppio) {
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      var ctx = new Ctx();
+      var suona = function (quando, hz) {
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "square";
+        o.frequency.value = hz;
+        g.gain.setValueAtTime(0.09, ctx.currentTime + quando);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + quando + 0.12);
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start(ctx.currentTime + quando);
+        o.stop(ctx.currentTime + quando + 0.13);
+      };
+      suona(0, doppio ? 820 : 1180);
+      if (doppio) { suona(0.16, 820); }
+      setTimeout(function () { ctx.close(); }, 700);
+    } catch (e) {}
+  }
+
+  function lampeggia() {
+    var f = $("flash");
+    f.classList.remove("go");
+    void f.offsetWidth;
+    f.classList.add("go");
+  }
+
+  function aggiungi(barcode, nomeManuale, qta, unita) {
+    var chiave = barcode || String(nomeManuale || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+    var id = dove + "_" + (chiave || ("S" + Date.now()));
+    var esiste = items.get(id);
+
+    if (esiste) {
+      /* già in inventario: non conto due volte, ti porto sulla sua riga */
+      puntato = id;
+      esiste.ts = Date.now();
+      salva();
+      nota((esiste.prodotto || chiave) + " è già in lista: correggi lì quanto ne resta.");
+      beep(true);
+      lampeggia();
+      setTimeout(function () { puntato = ""; render(); }, 4000);
+      return;
+    }
+
+    var it = {
+      id: id, barcode: barcode || "", prodotto: nomeManuale || "", marca: "", formato: "",
+      dove: dove,
+      chiuse: barcode ? 1 : 0,
+      aperta: barcode ? 0 : Math.max(0, numero(qta, 1)),
+      unita: barcode ? "pz" : (unita || "pz"),
+      confQta: 0,
+      scadenza: "",
+      kcal: "", proteine: "", carboidrati: "", grassi: "",
+      stato: barcode ? "cerco" : "manuale",
+      ts: Date.now()
+    };
+    if (!barcode && it.unita === "pz") { it.chiuse = it.aperta; it.aperta = 0; }
+    items.set(id, it);
+    puntato = id;
+    salva();
+    if (barcode) { cerca(it); }
+    else { nota("Aggiunto " + totaleScritto(it) + " di " + nomeManuale + " in " + dove.toLowerCase() + "."); }
+    beep(false);
+    if (navigator.vibrate) { try { navigator.vibrate(45); } catch (e) {} }
+    lampeggia();
+    setTimeout(function () { puntato = ""; render(); }, 4000);
+  }
+
+  /* ---------- fotocamera ---------- */
+
+  var ultimo = { cod: "", t: 0 };
+
+  function letto(cod) {
+    cod = String(cod || "").replace(/\D/g, "");
+    if (cod.length < 8) return;
+    var ora = Date.now();
+    if (cod === ultimo.cod && ora - ultimo.t < 3000) return;
+    ultimo = { cod: cod, t: ora };
+    aggiungi(cod, "", 1, "pz");
+  }
+
+  function spegni() {
+    acceso = false;
+    if (reader) { try { reader.reset(); } catch (e) {} reader = null; }
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    camera.className = "camera off";
+    msg.innerHTML = "<b>Fotocamera spenta</b>Accendila e avvicina il codice a barre finché non senti il segnale.";
+    msg.style.display = "";
+    $("btn-camera").textContent = "Accendi la fotocamera";
+  }
+
+  function errore(e) {
+    acceso = false;
+    camera.className = "camera off";
+    var nome = (e && e.name) ? e.name : "nessun errore";
+    var testo = (e && e.message) ? e.message : "getUserMedia non esiste su questo browser";
+    var causa = (nome === "NotAllowedError")
+      ? "Il permesso della fotocamera è stato negato: toccando di nuovo il pulsante il browser te lo richiede. Se non lo chiede più, riattivalo dalle impostazioni del sito."
+      : (nome === "NotFoundError" || nome === "OverconstrainedError")
+        ? "Non trovo nessuna fotocamera su questo dispositivo. Scrivi i codici a mano qui sotto."
+        : "Questo dispositivo non mi lascia usare la fotocamera. Scrivi i codici a mano qui sotto: funziona uguale, solo più lento.";
+    msg.innerHTML = "<b>Fotocamera non disponibile</b>" + causa +
+      '<span class="tecnico">' + nome + ": " + testo + "</span>";
+    msg.style.display = "";
+    $("btn-camera").textContent = "Riprova ad accendere";
+  }
+
+  function accendi() {
+    var video = $("video");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { errore(null); return; }
+    var chiesto = {
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      }
+    };
+    navigator.mediaDevices.getUserMedia(chiesto).then(function (s) {
+      stream = s;
+      video.srcObject = s;
+      return video.play();
+    }).then(function () {
+      camera.className = "camera on";
+      msg.style.display = "none";
+      acceso = true;
+      $("btn-camera").textContent = "Spegni la fotocamera";
+
+      var traccia = stream.getVideoTracks()[0];
+      var reale = traccia && traccia.getSettings ? traccia.getSettings() : {};
+      var qualita = (reale.width && reale.height) ? reale.width + "×" + reale.height : "risoluzione ignota";
+
+      /* Se la fotocamera lo consente, chiedo la messa a fuoco continua da vicino. */
+      try {
+        var cap = traccia.getCapabilities ? traccia.getCapabilities() : {};
+        var avanzate = [];
+        if (cap.focusMode && cap.focusMode.indexOf("continuous") >= 0) { avanzate.push({ focusMode: "continuous" }); }
+        if (avanzate.length) { traccia.applyConstraints({ advanced: avanzate }); }
+      } catch (e) {}
+
+      if ("BarcodeDetector" in window) {
+        motore = "lettore di Chrome";
+        var det = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] });
+        var giro = function () {
+          if (!acceso) return;
+          det.detect(video).then(function (out) {
+            if (out && out.length) letto(out[0].rawValue);
+          }).catch(function () {}).then(function () {
+            if (acceso) setTimeout(giro, 250);
+          });
+        };
+        giro();
+      } else if (window.ZXing && window.ZXing.BrowserMultiFormatReader) {
+        motore = "libreria ZXing";
+        var hints = new Map();
+        try {
+          var F = window.ZXing.BarcodeFormat, H = window.ZXing.DecodeHintType;
+          hints.set(H.POSSIBLE_FORMATS, [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128]);
+          hints.set(H.TRY_HARDER, true);
+        } catch (e) {}
+        reader = new window.ZXing.BrowserMultiFormatReader(hints, 200);
+        var risposta = function (res) { if (res) letto(res.getText()); };
+        try { reader.decodeFromStream(stream, video, risposta); }
+        catch (e) { reader.decodeFromVideoElement(video, risposta); }
+      } else {
+        motore = "nessuno";
+        nota("La libreria che legge i codici non si è caricata: controlla la connessione, oppure scrivi i codici a mano qui sotto.", true);
+        return;
+      }
+
+      nota("Fotocamera accesa · " + qualita + " · " + motore + ". Avvicina il codice fino a riempire il riquadro.");
+      setTimeout(function () {
+        if (acceso && !ultimo.cod) {
+          nota("Non ho ancora letto niente. Avvicina il codice a 10-15 cm, tienilo dritto e ben illuminato. " +
+            "Su un PC spesso non basta: dal telefono va molto meglio. Nel frattempo puoi scriverlo a mano.", true);
+        }
+      }, 12000);
+    }).catch(errore);
+  }
+
+  $("btn-camera").onclick = function () {
+    if (acceso) { spegni(); nota(""); } else { accendi(); }
+  };
+
+  /* ---------- codice letto da una fotografia ---------- */
+
+  $("btn-foto").onclick = function () { $("file-foto").click(); };
+
+  $("file-foto").onchange = function () {
+    var f = this.files && this.files[0];
+    this.value = "";
+    if (!f) return;
+    nota("Leggo la foto…");
+    var img = new Image();
+    img.onload = function () {
+      URL.revokeObjectURL(img.src);
+      if ("BarcodeDetector" in window) {
+        var det = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] });
+        det.detect(img).then(function (out) {
+          if (out && out.length) { ultimo = { cod: "", t: 0 }; letto(out[0].rawValue); }
+          else { nota("In questa foto non trovo nessun codice a barre. Riprova più da vicino, con il codice dritto e a fuoco.", true); }
+        }).catch(function () {
+          nota("Non riesco a leggere questa immagine.", true);
+        });
+      } else if (window.ZXing && window.ZXing.BrowserMultiFormatReader) {
+        var lettore = new window.ZXing.BrowserMultiFormatReader();
+        lettore.decodeFromImageElement(img).then(function (res) {
+          ultimo = { cod: "", t: 0 };
+          letto(res.getText());
+        }).catch(function () {
+          nota("In questa foto non trovo nessun codice a barre. Riprova più da vicino, con il codice dritto e a fuoco.", true);
+        });
+      } else {
+        nota("La libreria che legge i codici non si è caricata: controlla la connessione.", true);
+      }
+    };
+    img.onerror = function () { nota("Questo file non è un'immagine leggibile.", true); };
+    img.src = URL.createObjectURL(f);
+  };
+
+  $("btn-codice").onclick = function () {
+    var v = $("codice").value.replace(/\D/g, "");
+    if (v.length < 8) { nota("Un codice a barre ha almeno 8 cifre.", true); return; }
+    aggiungi(v, "", 1, "pz");
+    $("codice").value = "";
+  };
+  $("codice").onkeydown = function (e) { if (e.key === "Enter") $("btn-codice").click(); };
+
+  $("btn-sfuso").onclick = function () {
+    var v = $("sfuso").value.trim();
+    if (!v) { nota("Scrivi come si chiama il prodotto.", true); return; }
+    aggiungi("", v.toUpperCase(), $("sfuso-qta").value, $("sfuso-unita").value);
+    $("sfuso").value = "";
+    $("sfuso-qta").value = "1";
+    $("sfuso").focus();
+  };
+  $("sfuso").onkeydown = function (e) { if (e.key === "Enter") $("btn-sfuso").click(); };
+  $("sfuso-qta").onkeydown = function (e) { if (e.key === "Enter") $("btn-sfuso").click(); };
+
+  /* ---------- file ---------- */
+
+  var COLONNE = ["BARCODE", "PRODOTTO", "MARCA", "CATEGORIA", "DOVE", "CHIUSE", "APERTA",
+    "UNITA", "FORMATO", "CONF_QTA", "TOTALE", "SCADENZA", "KCAL_100G", "PROTEINE_100G",
+    "CARBOIDRATI_100G", "GRASSI_100G", "AGGIORNATO_IL", "NOTE"];
+
+  function campo(v) {
+    var s = (v === undefined || v === null) ? "" : String(v);
+    if (typeof v === "number") { s = scritto(v); }
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+
+  $("btn-csv").onclick = function () {
+    if (items.size === 0) { nota("Non c'è ancora niente da scaricare.", true); return; }
+    var oggi = new Date().toISOString().slice(0, 10);
+    var righe = [COLONNE.join(";")];
+    ordinati().forEach(function (it) {
+      var t = totale(it);
+      righe.push([
+        campo(it.barcode), campo(it.prodotto), campo(it.marca), campo(""), campo(it.dove),
+        campo(it.chiuse), campo(it.aperta), campo(it.unita), campo(it.formato), campo(it.confQta),
+        campo(t.qta), campo(it.scadenza), campo(it.kcal), campo(it.proteine),
+        campo(it.carboidrati), campo(it.grassi), campo(oggi),
+        campo(it.stato === "ignoto" ? "codice non trovato in catalogo" : "")
+      ].join(";"));
+    });
+    var blob = new Blob(["﻿" + righe.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "INVENTARIO_" + oggi + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    nota("File scaricato: mettilo in Drive, nella cartella INVENTARIO_ALIMENTI.");
+  };
+
+  /* Legge un CSV con punto e virgola e virgolette. */
+  function leggiCsv(testo) {
+    var righe = [], riga = [], cella = "", dentro = false;
+    testo = testo.replace(/^﻿/, "");
+    for (var i = 0; i < testo.length; i++) {
+      var c = testo[i];
+      if (dentro) {
+        if (c === '"') {
+          if (testo[i + 1] === '"') { cella += '"'; i++; } else { dentro = false; }
+        } else { cella += c; }
+      } else if (c === '"') { dentro = true; }
+      else if (c === ";") { riga.push(cella); cella = ""; }
+      else if (c === "\n") { riga.push(cella); righe.push(riga); riga = []; cella = ""; }
+      else if (c !== "\r") { cella += c; }
+    }
+    if (cella !== "" || riga.length) { riga.push(cella); righe.push(riga); }
+    return righe;
+  }
+
+  $("btn-import").onclick = function () { $("file-import").click(); };
+
+  $("file-import").onchange = function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var lettore = new FileReader();
+    lettore.onload = function () {
+      try {
+        var righe = leggiCsv(String(lettore.result));
+        if (!righe.length) { nota("Il file è vuoto.", true); return; }
+        var testa = righe[0].map(function (c) { return c.trim().toUpperCase(); });
+        var col = function (r, nome) {
+          var i = testa.indexOf(nome);
+          return i >= 0 ? (r[i] || "").trim() : "";
+        };
+        var quanti = 0;
+        righe.slice(1).forEach(function (r) {
+          if (!r.length || r.join("").trim() === "") return;
+          var barcode = col(r, "BARCODE");
+          var prodotto = col(r, "PRODOTTO");
+          var luogo = (col(r, "DOVE") || "DISPENSA").toUpperCase();
+          var chiave = barcode || prodotto.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+          if (!chiave) return;
+          var id = luogo + "_" + chiave;
+          items.set(id, {
+            id: id, barcode: barcode, prodotto: prodotto, marca: col(r, "MARCA"),
+            formato: col(r, "FORMATO"), dove: luogo,
+            chiuse: numero(col(r, "CHIUSE"), 0),
+            aperta: numero(col(r, "APERTA"), 0),
+            unita: col(r, "UNITA") || "pz",
+            confQta: numero(col(r, "CONF_QTA"), 0),
+            scadenza: col(r, "SCADENZA"),
+            kcal: col(r, "KCAL_100G"), proteine: col(r, "PROTEINE_100G"),
+            carboidrati: col(r, "CARBOIDRATI_100G"), grassi: col(r, "GRASSI_100G"),
+            stato: "ok", ts: Date.now() - (quanti * 10)
+          });
+          quanti++;
+        });
+        salva();
+        nota("Ripreso l'inventario: " + quanti + " prodotti caricati dal file.");
+      } catch (e) {
+        nota("Non riesco a leggere questo file: dev'essere un CSV scaricato da qui.", true);
+      }
+    };
+    lettore.readAsText(f);
+    this.value = "";
+  };
+
+  $("btn-svuota").onclick = function () {
+    if (items.size === 0) return;
+    if (!confirm("Cancello tutti i " + items.size + " prodotti? Scarica prima il file, altrimenti li perdi.")) return;
+    items.clear();
+    salva();
+    nota("Lista svuotata.");
+  };
+
+  /* ---------- avvio ---------- */
+
+  chips();
+  carica();
+  render();
+})();
+</script>
+</body>
+</html>
