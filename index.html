@@ -174,12 +174,18 @@
   .riga { background: var(--surface); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
   .riga.puntata { background: var(--amber-bg); }
   .riga .testa { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-  .riga .nome { font-weight: 600; font-size: 15px; }
-  .riga .nome.cercando { color: var(--ink-soft); font-weight: 500; font-style: italic; }
+  .riga input.titolo {
+    font: inherit; font-weight: 600; font-size: 15px;
+    width: 100%; padding: 4px 6px; margin: -4px 0 0 -6px;
+    border: 1px solid transparent; border-radius: 6px;
+    background: transparent; color: var(--ink);
+  }
+  .riga input.titolo:focus { border-color: var(--line); background: var(--surface); }
+  .riga input.titolo::placeholder { font-weight: 500; font-style: italic; color: var(--ink-soft); }
   .riga .meta {
     font-family: "IBM Plex Mono", monospace; font-size: 11px;
     color: var(--ink-soft); font-variant-numeric: tabular-nums;
-    letter-spacing: 0.04em; margin-top: 3px; word-break: break-all;
+    letter-spacing: 0.04em; margin-top: 3px; overflow-wrap: break-word;
   }
   .riga .meta .sep { opacity: 0.45; margin: 0 5px; }
   .riga .somma {
@@ -206,9 +212,19 @@
     border-radius: 8px; cursor: pointer;
   }
   .frazioni button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .comando > button.frazione {
+    font: inherit; font-size: 13px; min-width: 38px; height: 34px; padding: 0 8px;
+    border: 1px dashed var(--line); background: transparent; color: var(--ink-soft);
+    border-radius: 8px; cursor: pointer;
+  }
   .resto {
     font: inherit; font-size: 14px; width: 92px; padding: 7px 8px; text-align: center;
     font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--surface); color: var(--ink);
+  }
+  select.unita {
+    font: inherit; font-size: 14px; padding: 7px 8px;
     border: 1px solid var(--line); border-radius: 8px;
     background: var(--surface); color: var(--ink);
   }
@@ -353,10 +369,27 @@
 
   /* ---------- memoria ---------- */
 
+  /* Le prime versioni tenevano l'unità in `unita` e il residuo dentro `aperta`. */
+  function migra(it) {
+    if (it.confUnita === undefined) { it.confUnita = it.unita || "pz"; }
+    if (typeof it.aperta === "number") {
+      it.residua = it.aperta;
+      it.resUnita = it.unita || it.confUnita;
+      it.aperta = it.aperta > 0;
+    }
+    if (it.aperta === undefined) { it.aperta = false; }
+    if (it.residua === undefined) { it.residua = 0; }
+    if (it.resUnita === undefined) { it.resUnita = it.confUnita; }
+    if (it.chiuse === undefined) { it.chiuse = 0; }
+    if (it.confQta === undefined) { it.confQta = 0; }
+    delete it.unita;
+    return it;
+  }
+
   function carica() {
     try {
       var raw = JSON.parse(localStorage.getItem("dispensa") || "[]");
-      raw.forEach(function (it) { items.set(it.id, it); });
+      raw.forEach(function (it) { items.set(it.id, migra(it)); });
     } catch (e) {}
   }
 
@@ -365,18 +398,71 @@
     render();
   }
 
+  /* Rubrica dei formati scritti a mano: barcode → quanto contiene una confezione.
+     Serve per i prodotti che il catalogo non conosce, così li dichiari una volta sola. */
+  var rubrica = {};
+
+  function caricaRubrica() {
+    try { rubrica = JSON.parse(localStorage.getItem("formati") || "{}"); } catch (e) { rubrica = {}; }
+  }
+
+  function ricorda(barcode, qta, unita) {
+    if (!barcode || !(qta > 0)) return;
+    rubrica[barcode] = { qta: qta, unita: unita };
+    try { localStorage.setItem("formati", JSON.stringify(rubrica)); } catch (e) {}
+  }
+
   /* ---------- conti ---------- */
 
-  /* Quanto ce n'è in tutto: le confezioni chiuse più quel che resta nell'aperta. */
+  var UNITA = [["pz", "pezzi"], ["g", "grammi"], ["kg", "kg"], ["ml", "ml"], ["l", "litri"]];
+  var PESO = { g: 1, kg: 1000 };
+  var VOLUME = { ml: 1, l: 1000 };
+
+  function famiglia(u) {
+    if (PESO[u]) return "peso";
+    if (VOLUME[u]) return "volume";
+    return "pezzi";
+  }
+
+  /* Porta una quantità da un'unità all'altra, se sono parenti (g↔kg, ml↔l). */
+  function converti(q, da, a) {
+    if (da === a) return q;
+    var f = famiglia(da);
+    if (f !== famiglia(a)) return null;
+    if (f === "pezzi") return q;
+    var tab = (f === "peso") ? PESO : VOLUME;
+    return q * tab[da] / tab[a];
+  }
+
+  function residuaIn(it, unita) {
+    if (!it.aperta) return 0;
+    var r = converti(numero(it.residua, 0), it.resUnita || unita, unita);
+    return r === null ? 0 : r;
+  }
+
+  /* Quanto ce n'è in tutto: le confezioni intere più quel che resta in quella aperta. */
   function totale(it) {
-    if (it.unita === "pz") { return { qta: pulito(it.chiuse + it.aperta), unita: "pz" }; }
-    if (it.confQta > 0) { return { qta: pulito(it.chiuse * it.confQta + it.aperta), unita: it.unita }; }
-    return { qta: pulito(it.aperta), unita: it.unita };
+    var u = it.confUnita || "pz";
+    if (u === "pz") {
+      return { qta: pulito(it.chiuse + (it.aperta ? numero(it.residua, 0) : 0)), unita: "pz", certo: true };
+    }
+    if (it.confQta > 0) {
+      return { qta: pulito(it.chiuse * it.confQta + residuaIn(it, u)), unita: u, certo: true };
+    }
+    /* formato non ancora dichiarato: non posso sommare confezioni e residuo */
+    return { qta: pulito(residuaIn(it, u)), unita: u, certo: false };
   }
 
   function totaleScritto(it) {
     var t = totale(it);
-    return scritto(t.qta) + (t.unita === "pz" ? (t.qta === 1 ? " pezzo" : " pezzi") : " " + t.unita);
+    if (t.unita === "pz") {
+      return scritto(t.qta) + (t.qta === 1 ? " pezzo" : " pezzi");
+    }
+    if (t.certo) { return scritto(t.qta) + " " + t.unita; }
+    var voci = [];
+    if (it.chiuse > 0) { voci.push(it.chiuse + (it.chiuse === 1 ? " conf." : " conf.")); }
+    if (it.aperta) { voci.push(scritto(numero(it.residua, 0)) + " " + (it.resUnita || t.unita)); }
+    return voci.length ? voci.join(" + ") : "0";
   }
 
   /* ---------- interfaccia ---------- */
@@ -445,9 +531,21 @@
     testa.className = "testa";
 
     var sx = document.createElement("div");
-    var nome = document.createElement("div");
-    nome.className = "nome" + (it.stato === "cerco" ? " cercando" : "");
-    nome.textContent = it.prodotto || (it.stato === "cerco" ? "cerco il prodotto…" : "prodotto senza nome");
+    sx.style.minWidth = "0";
+    sx.style.flex = "1";
+    var nome = document.createElement("input");
+    nome.className = "titolo";
+    nome.value = it.prodotto || "";
+    nome.placeholder = it.stato === "cerco" ? "cerco il prodotto…" : "scrivi qui il nome";
+    nome.setAttribute("aria-label", "nome del prodotto");
+    nome.onfocus = function () { editing = true; };
+    nome.onblur = function () { editing = false; };
+    nome.onchange = function () {
+      it.prodotto = nome.value.trim();
+      it.ts = Date.now();
+      editing = false;
+      salva();
+    };
     sx.appendChild(nome);
 
     var meta = document.createElement("div");
@@ -455,8 +553,7 @@
     var voci = [];
     if (it.barcode) voci.push(it.barcode);
     if (it.marca) voci.push(it.marca);
-    if (it.formato) voci.push(it.formato);
-    voci.push(it.dove.toLowerCase());
+    if (it.formato && /[a-z]/i.test(it.formato)) voci.push(it.formato);
     meta.innerHTML = voci.map(function (v) { return String(v).replace(/[<>&]/g, ""); }).join('<span class="sep">·</span>');
     sx.appendChild(meta);
 
@@ -474,92 +571,147 @@
     testa.appendChild(somma);
     r.appendChild(testa);
 
-    /* confezioni chiuse */
-    if (it.barcode || it.confQta > 0 || it.unita === "pz") {
-      var c = document.createElement("div");
-      c.className = "comando";
-      var etic = document.createElement("span");
-      etic.className = "voce";
-      etic.textContent = it.unita === "pz" ? "Pezzi" : "Chiuse";
-      var st = document.createElement("div");
-      st.className = "stepper";
-      var meno = document.createElement("button");
-      meno.type = "button";
-      meno.textContent = "−";
-      meno.setAttribute("aria-label", "una confezione in meno");
-      meno.onclick = function () {
-        it.chiuse = Math.max(0, it.chiuse - 1);
-        it.ts = Date.now();
-        salva();
+    /* costruisce una casella numerica con la sua unità di misura */
+    function misura(etichetta, valore, unita, segnaposto, quandoCambia) {
+      var box = document.createElement("div");
+      box.className = "comando";
+      var lab = document.createElement("span");
+      lab.className = "voce";
+      lab.textContent = etichetta;
+      var num = document.createElement("input");
+      num.className = "resto";
+      num.inputMode = "decimal";
+      num.value = valore > 0 ? scritto(valore) : "";
+      num.placeholder = segnaposto;
+      num.setAttribute("aria-label", etichetta);
+      var sel = document.createElement("select");
+      sel.className = "unita";
+      sel.setAttribute("aria-label", "unità di misura, " + etichetta);
+      UNITA.forEach(function (u) {
+        var o = document.createElement("option");
+        o.value = u[0];
+        o.textContent = u[1];
+        if (u[0] === unita) { o.selected = true; }
+        sel.appendChild(o);
+      });
+      var manda = function () {
+        editing = false;
+        quandoCambia(Math.max(0, numero(num.value, 0)), sel.value);
       };
-      var q = document.createElement("span");
-      q.className = "q";
-      q.textContent = it.chiuse;
-      var piu = document.createElement("button");
-      piu.type = "button";
-      piu.textContent = "+";
-      piu.setAttribute("aria-label", "una confezione in più");
-      piu.onclick = function () { it.chiuse += 1; it.ts = Date.now(); salva(); };
-      st.appendChild(meno);
-      st.appendChild(q);
-      st.appendChild(piu);
-      c.appendChild(etic);
-      c.appendChild(st);
-      if (it.confQta > 0 && it.unita !== "pz") {
-        var da = document.createElement("span");
-        da.className = "voce";
-        da.style.minWidth = "auto";
-        da.textContent = "da " + scritto(it.confQta) + " " + it.unita;
-        c.appendChild(da);
-      }
-      r.appendChild(c);
+      num.onfocus = function () { editing = true; };
+      num.onblur = function () { editing = false; };
+      num.onchange = manda;
+      sel.onchange = manda;
+      box.appendChild(lab);
+      box.appendChild(num);
+      box.appendChild(sel);
+      return box;
     }
 
-    /* confezione aperta */
-    if (it.unita !== "pz") {
-      var a = document.createElement("div");
-      a.className = "comando";
+    /* formato della confezione: lo propone il catalogo, lo corregge Carlo */
+    r.appendChild(misura("Formato", it.confQta, it.confUnita || "pz", "quanto contiene",
+      function (q, u) {
+        var prima = it.confUnita;
+        it.confQta = q;
+        it.confUnita = u;
+        ricorda(it.barcode, q, u);
+        if (u !== "pz" && (!it.resUnita || famiglia(it.resUnita) !== famiglia(u) || prima === "pz")) {
+          it.resUnita = u;
+        }
+        it.ts = Date.now();
+        salva();
+      }));
+
+    /* quante confezioni intere */
+    var c = document.createElement("div");
+    c.className = "comando";
+    var etic = document.createElement("span");
+    etic.className = "voce";
+    etic.textContent = (it.confUnita || "pz") === "pz" ? "Pezzi" : "Confezioni";
+    var st = document.createElement("div");
+    st.className = "stepper";
+    var meno = document.createElement("button");
+    meno.type = "button";
+    meno.textContent = "−";
+    meno.setAttribute("aria-label", "una in meno");
+    meno.onclick = function () { it.chiuse = Math.max(0, it.chiuse - 1); it.ts = Date.now(); salva(); };
+    var q = document.createElement("span");
+    q.className = "q";
+    q.textContent = it.chiuse;
+    var piu = document.createElement("button");
+    piu.type = "button";
+    piu.textContent = "+";
+    piu.setAttribute("aria-label", "una in più");
+    piu.onclick = function () { it.chiuse += 1; it.ts = Date.now(); salva(); };
+    st.appendChild(meno);
+    st.appendChild(q);
+    st.appendChild(piu);
+    c.appendChild(etic);
+    c.appendChild(st);
+    if (it.confQta > 0 && (it.confUnita || "pz") !== "pz") {
+      var da = document.createElement("span");
+      da.className = "voce";
+      da.style.minWidth = "auto";
+      da.textContent = "da " + scritto(it.confQta) + " " + it.confUnita;
+      c.appendChild(da);
+    }
+    r.appendChild(c);
+
+    /* confezione aperta: sì o no — sempre disponibile */
+    {
+      var ap = document.createElement("div");
+      ap.className = "comando";
       var etic2 = document.createElement("span");
       etic2.className = "voce";
       etic2.textContent = "Aperta";
-
-      var fr = document.createElement("div");
-      fr.className = "frazioni";
-      if (it.confQta > 0) {
-        [["vuota", 0], ["¼", 0.25], ["½", 0.5], ["¾", 0.75], ["piena", 1]].forEach(function (coppia) {
+      var scelta = document.createElement("div");
+      scelta.className = "frazioni";
+      [["no", false], ["sì", true]].forEach(function (opzione) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.textContent = opzione[0];
+        b.setAttribute("aria-pressed", String(!!it.aperta === opzione[1]));
+        b.onclick = function () {
+          it.aperta = opzione[1];
+          if (it.aperta && !numero(it.residua, 0) && it.confQta > 0) {
+            it.residua = pulito(it.confQta / 2);
+            it.resUnita = it.confUnita;
+          }
+          it.ts = Date.now();
+          salva();
+        };
+        scelta.appendChild(b);
+      });
+      ap.appendChild(etic2);
+      ap.appendChild(scelta);
+      if (it.aperta && it.confQta > 0) {
+        [["¼", 0.25], ["½", 0.5], ["¾", 0.75]].forEach(function (coppia) {
           var b = document.createElement("button");
           b.type = "button";
+          b.className = "frazione";
           b.textContent = coppia[0];
-          var valore = pulito(it.confQta * coppia[1]);
-          b.setAttribute("aria-pressed", String(Math.abs(it.aperta - valore) < 0.001));
-          b.onclick = function () { it.aperta = valore; it.ts = Date.now(); salva(); };
-          fr.appendChild(b);
+          b.title = "un " + coppia[0] + " della confezione";
+          b.onclick = function () {
+            it.residua = pulito(it.confQta * coppia[1]);
+            it.resUnita = it.confUnita;
+            it.ts = Date.now();
+            salva();
+          };
+          ap.appendChild(b);
         });
       }
+      r.appendChild(ap);
 
-      var resto = document.createElement("input");
-      resto.className = "resto";
-      resto.inputMode = "decimal";
-      resto.value = scritto(it.aperta);
-      resto.setAttribute("aria-label", "quanto resta nella confezione aperta");
-      resto.onfocus = function () { editing = true; };
-      resto.onblur = function () { editing = false; };
-      resto.onchange = function () {
-        it.aperta = Math.max(0, numero(resto.value, 0));
-        it.ts = Date.now();
-        editing = false;
-        salva();
-      };
-      var um = document.createElement("span");
-      um.className = "voce";
-      um.style.minWidth = "auto";
-      um.textContent = it.unita;
-
-      a.appendChild(etic2);
-      if (it.confQta > 0) { a.appendChild(fr); }
-      a.appendChild(resto);
-      a.appendChild(um);
-      r.appendChild(a);
+      /* quantità residua nella confezione aperta */
+      if (it.aperta) {
+        r.appendChild(misura("Residua", numero(it.residua, 0), it.resUnita || it.confUnita, "quanto resta",
+          function (q2, u2) {
+            it.residua = q2;
+            it.resUnita = u2;
+            it.ts = Date.now();
+            salva();
+          }));
+      }
     }
 
     /* scadenza */
@@ -575,6 +727,33 @@
     data.onfocus = function () { editing = true; };
     data.onblur = function () { editing = false; };
     data.onchange = function () { it.scadenza = data.value; editing = false; salva(); };
+    var luogo = document.createElement("select");
+    luogo.className = "unita";
+    luogo.setAttribute("aria-label", "dove si trova");
+    LUOGHI.forEach(function (l) {
+      var o = document.createElement("option");
+      o.value = l;
+      o.textContent = l.charAt(0) + l.slice(1).toLowerCase();
+      if (l === it.dove) { o.selected = true; }
+      luogo.appendChild(o);
+    });
+    luogo.onchange = function () {
+      var suffisso = it.id.slice(it.dove.length + 1);
+      var nuovoId = luogo.value + "_" + suffisso;
+      if (items.has(nuovoId)) {
+        luogo.value = it.dove;
+        nota("In " + luogo.options[luogo.selectedIndex].text.toLowerCase() +
+          " c'è già lo stesso prodotto: uniscili a mano, o togli una delle due righe.", true);
+        return;
+      }
+      items.delete(it.id);
+      it.id = nuovoId;
+      it.dove = luogo.value;
+      it.ts = Date.now();
+      items.set(nuovoId, it);
+      salva();
+    };
+
     var via = document.createElement("button");
     via.type = "button";
     via.className = "via";
@@ -582,6 +761,7 @@
     via.onclick = function () { items.delete(it.id); salva(); };
     coda.appendChild(lab);
     coda.appendChild(data);
+    coda.appendChild(luogo);
     coda.appendChild(via);
     r.appendChild(coda);
 
@@ -592,7 +772,7 @@
 
   function cerca(it) {
     var url = "https://world.openfoodfacts.org/api/v2/product/" + encodeURIComponent(it.barcode) +
-      "?fields=product_name,product_name_it,brands,quantity,nutriments";
+      "?fields=product_name,product_name_it,brands,quantity,product_quantity,product_quantity_unit,nutriments";
     fetch(url, { headers: { "Accept": "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (d) {
@@ -607,8 +787,27 @@
         it.prodotto = (p.product_name_it || p.product_name || "").trim();
         it.marca = (p.brands || "").split(",")[0].trim();
         it.formato = (p.quantity || "").trim();
-        var f = leggiFormato(it.formato);
-        if (f) { it.confQta = f.qta; it.unita = f.unita; }
+
+        /* il formato: prima il campo numerico del catalogo, poi il testo libero */
+        var qta = parseFloat(p.product_quantity);
+        var um = String(p.product_quantity_unit || "").toLowerCase();
+        if (it.confQta > 0) {
+          /* formato già noto (l'hai scritto tu una volta): il catalogo non lo tocca */
+        } else if (isFinite(qta) && qta > 0 && (PESO[um] || VOLUME[um])) {
+          it.confQta = qta;
+          it.confUnita = um;
+          it.resUnita = um;
+        } else {
+          var f = leggiFormato(it.formato);
+          if (f) {
+            it.confQta = f.qta;
+            it.confUnita = f.unita;
+            it.resUnita = f.unita;
+          } else {
+            /* il catalogo non dice quanto contiene: meglio vuoto che un numero senza senso */
+            it.confQta = 0;
+          }
+        }
         it.kcal = n["energy-kcal_100g"];
         it.proteine = n.proteins_100g;
         it.carboidrati = n.carbohydrates_100g;
@@ -671,19 +870,28 @@
       return;
     }
 
+    var quantoSfuso = Math.max(0, numero(qta, 1));
+    var unitaSfusa = unita || "pz";
     var it = {
       id: id, barcode: barcode || "", prodotto: nomeManuale || "", marca: "", formato: "",
       dove: dove,
-      chiuse: barcode ? 1 : 0,
-      aperta: barcode ? 0 : Math.max(0, numero(qta, 1)),
-      unita: barcode ? "pz" : (unita || "pz"),
       confQta: 0,
+      confUnita: barcode ? "pz" : unitaSfusa,
+      chiuse: barcode ? 1 : (unitaSfusa === "pz" ? quantoSfuso : 0),
+      aperta: barcode ? false : (unitaSfusa !== "pz"),
+      residua: (!barcode && unitaSfusa !== "pz") ? quantoSfuso : 0,
+      resUnita: unitaSfusa,
       scadenza: "",
       kcal: "", proteine: "", carboidrati: "", grassi: "",
       stato: barcode ? "cerco" : "manuale",
       ts: Date.now()
     };
-    if (!barcode && it.unita === "pz") { it.chiuse = it.aperta; it.aperta = 0; }
+    var noto = barcode ? rubrica[barcode] : null;
+    if (noto) {
+      it.confQta = noto.qta;
+      it.confUnita = noto.unita;
+      it.resUnita = noto.unita;
+    }
     items.set(id, it);
     puntato = id;
     salva();
@@ -867,8 +1075,9 @@
 
   /* ---------- file ---------- */
 
-  var COLONNE = ["BARCODE", "PRODOTTO", "MARCA", "CATEGORIA", "DOVE", "CHIUSE", "APERTA",
-    "UNITA", "FORMATO", "CONF_QTA", "TOTALE", "SCADENZA", "KCAL_100G", "PROTEINE_100G",
+  var COLONNE = ["BARCODE", "PRODOTTO", "MARCA", "CATEGORIA", "DOVE",
+    "FORMATO_QTA", "FORMATO_UNITA", "CONFEZIONI", "APERTA", "RESIDUA", "RESIDUA_UNITA",
+    "TOTALE", "TOTALE_UNITA", "SCADENZA", "KCAL_100G", "PROTEINE_100G",
     "CARBOIDRATI_100G", "GRASSI_100G", "AGGIORNATO_IL", "NOTE"];
 
   function campo(v) {
@@ -885,10 +1094,14 @@
       var t = totale(it);
       righe.push([
         campo(it.barcode), campo(it.prodotto), campo(it.marca), campo(""), campo(it.dove),
-        campo(it.chiuse), campo(it.aperta), campo(it.unita), campo(it.formato), campo(it.confQta),
-        campo(t.qta), campo(it.scadenza), campo(it.kcal), campo(it.proteine),
+        campo(it.confQta || ""), campo(it.confUnita || ""), campo(it.chiuse),
+        campo(it.aperta ? "SI" : "NO"),
+        campo(it.aperta ? numero(it.residua, 0) : ""), campo(it.aperta ? (it.resUnita || "") : ""),
+        campo(t.certo ? t.qta : ""), campo(t.certo ? t.unita : ""),
+        campo(it.scadenza), campo(it.kcal), campo(it.proteine),
         campo(it.carboidrati), campo(it.grassi), campo(oggi),
-        campo(it.stato === "ignoto" ? "codice non trovato in catalogo" : "")
+        campo(it.stato === "ignoto" ? "codice non trovato in catalogo"
+          : (!t.certo ? "formato non dichiarato: totale da calcolare" : ""))
       ].join(";"));
     });
     var blob = new Blob(["﻿" + righe.join("\r\n")], { type: "text/csv;charset=utf-8" });
@@ -947,11 +1160,13 @@
           var id = luogo + "_" + chiave;
           items.set(id, {
             id: id, barcode: barcode, prodotto: prodotto, marca: col(r, "MARCA"),
-            formato: col(r, "FORMATO"), dove: luogo,
-            chiuse: numero(col(r, "CHIUSE"), 0),
-            aperta: numero(col(r, "APERTA"), 0),
-            unita: col(r, "UNITA") || "pz",
-            confQta: numero(col(r, "CONF_QTA"), 0),
+            formato: "", dove: luogo,
+            confQta: numero(col(r, "FORMATO_QTA"), 0),
+            confUnita: col(r, "FORMATO_UNITA") || "pz",
+            chiuse: numero(col(r, "CONFEZIONI"), 0),
+            aperta: col(r, "APERTA").toUpperCase() === "SI",
+            residua: numero(col(r, "RESIDUA"), 0),
+            resUnita: col(r, "RESIDUA_UNITA") || col(r, "FORMATO_UNITA") || "pz",
             scadenza: col(r, "SCADENZA"),
             kcal: col(r, "KCAL_100G"), proteine: col(r, "PROTEINE_100G"),
             carboidrati: col(r, "CARBOIDRATI_100G"), grassi: col(r, "GRASSI_100G"),
@@ -980,6 +1195,7 @@
   /* ---------- avvio ---------- */
 
   chips();
+  caricaRubrica();
   carica();
   render();
 })();
