@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Scanner Dispensa</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
   :root {
@@ -234,6 +234,92 @@
   .coda input[type="date"] { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
   .coda .via { font: inherit; font-size: 12px; background: none; border: none; color: var(--ink-soft); cursor: pointer; text-decoration: underline; padding: 6px 0; margin-left: auto; }
   .riga.scade .coda label { color: var(--amber); }
+  .riga.scaduto .coda label { color: var(--laser); }
+  .filtri { margin-bottom: 10px; }
+  .filtri .chip.ordine { border-style: dashed; }
+
+  /* ---------- tema fresco e colorato ---------- */
+
+  :root {
+    --ground: #F2F7F4;
+    --accent: #17A673;
+    --radius: 14px;
+    --cielo: #2FA4D7;
+  }
+  [data-luogo="DISPENSA"] { --luogo: #E8833A; }
+  [data-luogo="FRIGO"]    { --luogo: #2FA4D7; }
+  [data-luogo="FREEZER"]  { --luogo: #4667DB; }
+  [data-luogo="CANTINA"]  { --luogo: #8E5BCF; }
+
+  body { font-family: Nunito, "IBM Plex Sans", system-ui, -apple-system, sans-serif; font-size: 16px; }
+  h1 { font-family: Nunito, system-ui, sans-serif; font-weight: 800; }
+
+  header {
+    align-items: center;
+    padding: 18px;
+    border-radius: 22px;
+    color: #FFFFFF;
+    background: linear-gradient(135deg, #17A673 0%, #2FA4D7 100%);
+    box-shadow: 0 8px 22px rgba(23, 166, 115, 0.28);
+  }
+  header .sub { color: rgba(255, 255, 255, 0.88); }
+  .totale { background: rgba(255, 255, 255, 0.2); padding: 8px 14px; border-radius: 14px; text-align: center; }
+  .totale span { color: rgba(255, 255, 255, 0.88); }
+
+  .label { font-weight: 800; }
+
+  .chip {
+    font-weight: 700; font-size: 14px;
+    padding: 9px 15px;
+    border-width: 2px;
+    border-color: color-mix(in srgb, var(--luogo, var(--accent)) 35%, var(--line));
+    background: color-mix(in srgb, var(--luogo, var(--accent)) 9%, var(--surface));
+  }
+  .chip[aria-pressed="true"] {
+    background: var(--luogo, var(--accent));
+    border-color: var(--luogo, var(--accent));
+    color: #FFFFFF;
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--luogo, var(--accent)) 40%, transparent);
+  }
+
+  button.primary {
+    font-weight: 800;
+    background: linear-gradient(135deg, #17A673 0%, #2FA4D7 100%);
+    color: #FFFFFF;
+    box-shadow: 0 6px 16px rgba(23, 166, 115, 0.3);
+  }
+  button.ghost { font-weight: 700; border-width: 2px; background: var(--surface); color: var(--ink); }
+
+  .lista { gap: 12px; background: none; border: none; border-radius: 0; overflow: visible; }
+  .riga {
+    padding: 14px;
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    border-left: 7px solid var(--luogo, var(--line));
+    box-shadow: 0 3px 10px rgba(20, 40, 30, 0.07);
+  }
+  .riga.scade { background: color-mix(in srgb, var(--amber) 9%, var(--surface)); }
+  .riga.scaduto { background: color-mix(in srgb, var(--laser) 9%, var(--surface)); }
+  .riga.puntata { outline: 3px solid var(--accent); outline-offset: 1px; }
+  .riga input.titolo { font-weight: 800; font-size: 17px; }
+
+  .etichette { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+  .etichette span {
+    font-size: 12px; font-weight: 800;
+    padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .etichette .luogo {
+    color: var(--luogo);
+    background: color-mix(in srgb, var(--luogo) 14%, var(--surface));
+  }
+  .etichette .avviso { color: #FFFFFF; background: #D98A0B; }
+  .riga.scaduto .etichette .avviso { background: #D6453C; }
+
+  .stepper button, .frazioni button { border-radius: 10px; font-weight: 700; }
+  .stepper button { width: 38px; height: 38px; }
+  .frazioni button[aria-pressed="true"] { color: #FFFFFF; }
+  .vuoto { border-width: 2px; border-radius: 18px; }
+  .nota.allarme { font-weight: 800; }
 
   .vuoto { background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius); padding: 22px; }
   .vuoto p { margin: 0 0 10px; color: var(--ink-soft); font-size: 14px; }
@@ -305,6 +391,8 @@
 
   <section>
     <p class="label">In casa</p>
+    <div class="chips filtri" id="filtri"></div>
+    <p class="nota allarme" id="allerta" style="margin-bottom: 10px"></p>
     <div id="contenuto"></div>
     <p class="nota" id="stato" style="margin-top: 10px"></p>
   </section>
@@ -320,6 +408,8 @@
 <script>
 (function () {
   var LUOGHI = ["DISPENSA", "FRIGO", "FREEZER", "CANTINA"];
+  var ICONE = { TUTTO: "🏠", DISPENSA: "🥫", FRIGO: "🥛", FREEZER: "❄️", CANTINA: "🍷" };
+  function nomeLuogo(l) { return ICONE[l] + " " + l.charAt(0) + l.slice(1).toLowerCase(); }
   var dove = "DISPENSA";
   var items = new Map();
   var editing = false;
@@ -328,6 +418,16 @@
   var stream = null;
   var acceso = false;
   var motore = "";
+
+  /* Cosa mostra la lista: un solo luogo oppure tutto, e in che ordine. */
+  var SOGLIA = 3; /* giorni entro cui un prodotto è "in scadenza" */
+  var vista = "TUTTO";
+  var perScadenza = false;
+  try {
+    vista = localStorage.getItem("vista") || "TUTTO";
+    perScadenza = localStorage.getItem("ordine") === "scadenza";
+  } catch (e) {}
+  if (vista !== "TUTTO" && LUOGHI.indexOf(vista) < 0) { vista = "TUTTO"; }
 
   function $(id) { return document.getElementById(id); }
   var contenuto = $("contenuto"), stato = $("stato"), camera = $("camera"), msg = $("camera-msg");
@@ -479,7 +579,8 @@
       var b = document.createElement("button");
       b.className = "chip";
       b.type = "button";
-      b.textContent = l.charAt(0) + l.slice(1).toLowerCase();
+      b.textContent = nomeLuogo(l);
+      b.setAttribute("data-luogo", l);
       b.setAttribute("aria-pressed", String(l === dove));
       b.onclick = function () { dove = l; chips(); };
       box.appendChild(b);
@@ -490,9 +591,78 @@
     return Array.from(items.values()).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
   }
 
+  /* Giorni che mancano alla scadenza: negativo = già scaduto, null = data non scritta. */
+  function giorni(it) {
+    var p = String(it.scadenza || "").split("-");
+    if (p.length !== 3) return null;
+    var d = new Date(+p[0], p[1] - 1, +p[2]);
+    var oggi = new Date();
+    oggi.setHours(0, 0, 0, 0);
+    var n = Math.round((d - oggi) / 86400000);
+    return isFinite(n) ? n : null;
+  }
+
+  function avviso(g) {
+    if (g === null || g > SOGLIA) return "";
+    if (g < -1) return "Scaduto da " + (-g) + " giorni";
+    if (g === -1) return "Scaduto ieri";
+    if (g === 0) return "Scade oggi";
+    if (g === 1) return "Scade domani";
+    return "Scade tra " + g + " giorni";
+  }
+
+  /* I prodotti del luogo scelto; con "prima ciò che scade" quelli senza data vanno in fondo. */
+  function visibili() {
+    var l = ordinati().filter(function (it) { return vista === "TUTTO" || it.dove === vista; });
+    if (perScadenza) {
+      l.sort(function (a, b) {
+        var ga = giorni(a), gb = giorni(b);
+        if (ga === null && gb === null) return 0;
+        if (ga === null) return 1;
+        if (gb === null) return -1;
+        return ga - gb;
+      });
+    }
+    return l;
+  }
+
+  function ricordaVista() {
+    try {
+      localStorage.setItem("vista", vista);
+      localStorage.setItem("ordine", perScadenza ? "scadenza" : "recenti");
+    } catch (e) {}
+  }
+
+  function filtri(tutti) {
+    var box = $("filtri");
+    box.innerHTML = "";
+    if (!tutti.length) return;
+    ["TUTTO"].concat(LUOGHI).forEach(function (l) {
+      var quanti = l === "TUTTO" ? tutti.length
+        : tutti.filter(function (it) { return it.dove === l; }).length;
+      var b = document.createElement("button");
+      b.className = "chip";
+      b.type = "button";
+      b.textContent = nomeLuogo(l) + " " + quanti;
+      if (l !== "TUTTO") { b.setAttribute("data-luogo", l); }
+      b.setAttribute("aria-pressed", String(l === vista));
+      b.onclick = function () { vista = l; ricordaVista(); render(); };
+      box.appendChild(b);
+    });
+    var o = document.createElement("button");
+    o.className = "chip ordine";
+    o.type = "button";
+    o.textContent = "Prima ciò che scade";
+    o.setAttribute("aria-pressed", String(perScadenza));
+    o.onclick = function () { perScadenza = !perScadenza; ricordaVista(); render(); };
+    box.appendChild(o);
+  }
+
   function render() {
     if (editing) return;
     var lista = ordinati();
+    filtri(lista);
+    $("allerta").textContent = "";
     var finiti = lista.filter(function (it) { return totale(it).qta <= 0; }).length;
     $("tot-pezzi").textContent = lista.length;
     $("tot-voci").textContent = lista.length === 0 ? "nessun prodotto"
@@ -505,6 +675,23 @@
         "<li>Passa i codici a barre davanti alla fotocamera: ogni prodotto entra con <b>una confezione chiusa</b>.</li>" +
         "<li>Se una confezione è <b>aperta</b>, dichiara quanto ne resta: metà, tre quarti, o il peso esatto.</li>" +
         "<li>Quello che non ha codice — pomodori, pane, mele — lo scrivi a peso qui sopra.</li></ol></div>";
+      return;
+    }
+
+    lista = visibili();
+    var scaduti = 0, presto = 0;
+    lista.forEach(function (it) {
+      var g = giorni(it);
+      if (g === null) return;
+      if (g < 0) { scaduti++; } else if (g <= SOGLIA) { presto++; }
+    });
+    var allarmi = [];
+    if (scaduti) { allarmi.push(scaduti + (scaduti === 1 ? " scaduto" : " scaduti")); }
+    if (presto) { allarmi.push(presto + " in scadenza entro " + SOGLIA + " giorni"); }
+    $("allerta").textContent = allarmi.join(" · ");
+
+    if (lista.length === 0) {
+      contenuto.innerHTML = '<div class="vuoto"><p style="margin:0">Qui non c\'è ancora niente: tocca «Tutto» per vedere gli altri luoghi.</p></div>';
       return;
     }
 
@@ -523,7 +710,9 @@
   function riga(it) {
     var t = totale(it);
     var r = document.createElement("div");
-    r.className = "riga" + (it.scadenza ? " scade" : "") + (puntato === it.id ? " puntata" : "");
+    var gg = giorni(it);
+    r.className = "riga" + (gg !== null && gg < 0 ? " scaduto" : (gg !== null && gg <= SOGLIA ? " scade" : "")) +
+      (puntato === it.id ? " puntata" : "");
     r.id = "r-" + it.id;
 
     /* intestazione: nome, dati, totale */
@@ -556,6 +745,21 @@
     if (it.formato && /[a-z]/i.test(it.formato)) voci.push(it.formato);
     meta.innerHTML = voci.map(function (v) { return String(v).replace(/[<>&]/g, ""); }).join('<span class="sep">·</span>');
     sx.appendChild(meta);
+
+    r.setAttribute("data-luogo", it.dove);
+    var etichette = document.createElement("div");
+    etichette.className = "etichette";
+    var targa = document.createElement("span");
+    targa.className = "luogo";
+    targa.textContent = ICONE[it.dove] ? nomeLuogo(it.dove) : it.dove;
+    etichette.appendChild(targa);
+    if (avviso(gg)) {
+      var allarme = document.createElement("span");
+      allarme.className = "avviso";
+      allarme.textContent = "⏰ " + avviso(gg);
+      etichette.appendChild(allarme);
+    }
+    sx.appendChild(etichette);
 
     var somma = document.createElement("div");
     somma.className = "somma" + (t.qta <= 0 ? " zero" : "");
@@ -857,6 +1061,8 @@
     var chiave = barcode || String(nomeManuale || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_");
     var id = dove + "_" + (chiave || ("S" + Date.now()));
     var esiste = items.get(id);
+    /* se la lista mostra un altro luogo, la riapro: il prodotto appena letto deve vedersi */
+    if (vista !== "TUTTO" && vista !== dove) { vista = "TUTTO"; ricordaVista(); }
 
     if (esiste) {
       /* già in inventario: non conto due volte, ti porto sulla sua riga */
