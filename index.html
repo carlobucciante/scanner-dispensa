@@ -3,352 +3,290 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <title>Scanner Dispensa</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
   :root {
-    --ground: #F7F6F1;
-    --surface: #FFFFFF;
-    --surface-2: #EFEEE7;
-    --ink: #1D2019;
-    --ink-soft: #6B7065;
-    --line: #DCDAD0;
-    --accent: #2E6B4F;
-    --accent-ink: #FFFFFF;
-    --amber: #9A6206;
-    --amber-bg: #FBF2DE;
-    --laser: #D6453C;
-    --radius: 10px;
+    --bg: #F2F2F7;
+    --card: #FFFFFF;
+    --fill: rgba(118, 118, 128, 0.12);
+    --fill-forte: rgba(118, 118, 128, 0.2);
+    --pollice: #FFFFFF;
+    --ink: #000000;
+    --ink-2: #636366;
+    --sep: rgba(60, 60, 67, 0.18);
+    --blu: #007AFF;
+    --blu-velo: rgba(0, 122, 255, 0.12);
+    --rosso: #D70015;
+    --rosso-velo: rgba(255, 59, 48, 0.14);
+    --arancio: #A84A00;
+    --arancio-velo: rgba(255, 149, 0, 0.18);
+    --verde: #34C759;
+    --raggio: 16px;
   }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --ground: #141713;
-      --surface: #1D211C;
-      --surface-2: #262B25;
-      --ink: #EDEFE8;
-      --ink-soft: #9AA093;
-      --line: #333A32;
-      --accent: #63C08F;
-      --accent-ink: #10160F;
-      --amber: #E0A445;
-      --amber-bg: #2E2718;
-      --laser: #E8635A;
+    :root {
+      --bg: #000000;
+      --card: #1C1C1E;
+      --fill: rgba(118, 118, 128, 0.24);
+      --fill-forte: rgba(118, 118, 128, 0.36);
+      --pollice: #636366;
+      --ink: #FFFFFF;
+      --ink-2: #A1A1A8;
+      --sep: rgba(84, 84, 88, 0.65);
+      --blu: #0A84FF;
+      --blu-velo: rgba(10, 132, 255, 0.2);
+      --rosso: #FF6961;
+      --rosso-velo: rgba(255, 69, 58, 0.22);
+      --arancio: #FFB340;
+      --arancio-velo: rgba(255, 159, 10, 0.22);
+      --verde: #30D158;
     }
   }
+  [data-luogo="DISPENSA"] { --luogo: #FF9500; }
+  [data-luogo="FRIGO"]    { --luogo: #32ADE6; }
+  [data-luogo="FREEZER"]  { --luogo: #5856D6; }
+  [data-luogo="CANTINA"]  { --luogo: #AF52DE; }
 
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html { color-scheme: light dark; }
   body {
     margin: 0;
-    background: var(--ground);
+    background: var(--bg);
     color: var(--ink);
-    font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
-    font-size: 15px;
-    line-height: 1.45;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, "Segoe UI", Roboto, sans-serif;
+    font-size: 17px;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
     -webkit-text-size-adjust: 100%;
   }
-  img { max-width: 100%; }
+  button, input, select { font: inherit; letter-spacing: inherit; color: inherit; }
+  button { cursor: pointer; border: none; background: none; padding: 0; }
+  button:active { opacity: 0.6; }
+  :focus-visible { outline: 3px solid var(--blu); outline-offset: 2px; }
+  input:focus-visible, select:focus-visible { outline-offset: 0; }
 
   .wrap {
     max-width: 600px;
     margin: 0 auto;
-    padding: 18px 16px 60px;
+    padding: calc(18px + env(safe-area-inset-top)) 16px calc(48px + env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 26px;
   }
 
-  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
-  h1 {
-    font-family: Archivo, system-ui, sans-serif;
-    font-weight: 700;
-    font-size: 26px;
-    letter-spacing: -0.01em;
-    margin: 0;
-    text-wrap: balance;
-  }
-  .sub { color: var(--ink-soft); font-size: 13px; margin: 2px 0 0; }
-  .totale {
-    font-family: "IBM Plex Mono", monospace;
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-    line-height: 1.1;
-    white-space: nowrap;
-  }
-  .totale b { font-size: 22px; font-weight: 500; display: block; }
-  .totale span { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em; }
+  header { padding: 8px 4px 0; }
+  h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; margin: 0; }
+  .sub { color: var(--ink-2); font-size: 15px; margin: 4px 0 0; }
 
   .label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--ink-soft);
-    font-weight: 600;
-    margin: 0 0 8px;
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.02em;
+    color: var(--ink-2); margin: 0 0 7px; padding: 0 16px;
+  }
+  .nota { font-size: 13px; color: var(--ink-2); margin: 0; padding: 0 16px; }
+  .nota.allarme { color: var(--arancio); font-weight: 600; }
+  .nota:empty { display: none; }
+
+  /* ---------- controllo a segmenti (dove stai guardando) ---------- */
+
+  .segmenti { display: flex; background: var(--fill); border-radius: 10px; padding: 2px; }
+  .seg {
+    flex: 1; min-width: 0; height: 34px; border-radius: 8px;
+    font-size: 14px; font-weight: 500;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .seg::before, .chip[data-luogo]::before, .luogo::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--luogo); flex: none;
+  }
+  .seg[aria-pressed="true"] {
+    background: var(--pollice); font-weight: 600;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 1px 1px rgba(0, 0, 0, 0.04);
   }
 
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chip {
-    font: inherit; font-weight: 500; font-size: 13px;
-    padding: 7px 14px;
-    border: 1px solid var(--line);
-    background: var(--surface); color: var(--ink);
-    border-radius: 999px; cursor: pointer;
-  }
-  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-  .chip:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* ---------- fotocamera ---------- */
 
   .camera {
     position: relative; aspect-ratio: 4 / 3;
-    background: #0D0F0C;
-    border: 1px solid var(--line); border-radius: var(--radius);
-    overflow: hidden;
+    background: #0B0B0C; border-radius: var(--raggio); overflow: hidden;
+    box-shadow: inset 0 0 0 1px var(--sep);
     display: flex; align-items: center; justify-content: center;
   }
   .camera video { width: 100%; height: 100%; object-fit: cover; display: block; }
   .camera.off video { display: none; }
-  .mirino { position: absolute; inset: 14% 8%; border: 2px solid rgba(255,255,255,0.5); border-radius: 6px; pointer-events: none; display: none; }
+  .mirino { position: absolute; inset: 16% 9%; border: 2px solid rgba(255, 255, 255, 0.75); border-radius: 14px; pointer-events: none; display: none; }
   .camera.on .mirino { display: block; }
   .mirino::after {
-    content: ""; position: absolute; left: 6px; right: 6px; top: 50%;
-    height: 2px; background: var(--laser); box-shadow: 0 0 8px var(--laser);
+    content: ""; position: absolute; left: 10px; right: 10px; top: 50%;
+    height: 2px; border-radius: 2px; background: #FF453A; box-shadow: 0 0 10px #FF453A;
     animation: sweep 2.4s ease-in-out infinite;
   }
   @keyframes sweep { 0%, 100% { transform: translateY(-38px); } 50% { transform: translateY(38px); } }
   @media (prefers-reduced-motion: reduce) { .mirino::after { animation: none; } }
 
-  .camera-msg { position: absolute; padding: 20px; text-align: center; color: #E8EAE4; font-size: 14px; max-width: 330px; }
-  .camera-msg b { display: block; font-family: Archivo, system-ui, sans-serif; font-size: 16px; margin-bottom: 6px; }
+  .camera-msg { position: absolute; padding: 20px; text-align: center; color: #EBEBF5; font-size: 15px; max-width: 330px; }
+  .camera-msg b { display: block; font-size: 17px; font-weight: 600; color: #FFFFFF; margin-bottom: 6px; }
   .camera-msg .tecnico {
     display: block; margin-top: 12px; padding-top: 10px;
-    border-top: 1px solid rgba(232,234,228,0.25);
-    font-family: "IBM Plex Mono", monospace; font-size: 11px;
-    color: #B9BFB2; word-break: break-word;
+    border-top: 1px solid rgba(235, 235, 245, 0.25);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px;
+    color: #AEAEB2; word-break: break-word;
   }
-
-  .flash { position: absolute; inset: 0; background: var(--accent); opacity: 0; pointer-events: none; }
+  .flash { position: absolute; inset: 0; background: #FFFFFF; opacity: 0; pointer-events: none; }
   .flash.go { animation: pop 0.42s ease-out; }
-  @keyframes pop { 0% { opacity: 0.75; } 100% { opacity: 0; } }
+  @keyframes pop { 0% { opacity: 0.7; } 100% { opacity: 0; } }
+
+  /* ---------- pulsanti ---------- */
 
   button.primary {
-    font: inherit; font-weight: 600; font-size: 15px;
-    background: var(--accent); color: var(--accent-ink);
-    border: none; border-radius: var(--radius);
-    padding: 13px 18px; cursor: pointer; width: 100%;
+    background: var(--blu); color: #FFFFFF;
+    font-weight: 600; border-radius: 14px;
+    min-height: 50px; padding: 0 18px; width: 100%;
   }
   button.ghost {
-    font: inherit; font-size: 13px; font-weight: 500;
-    background: transparent; color: var(--ink-soft);
-    border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 10px 14px; cursor: pointer;
+    background: var(--blu-velo); color: var(--blu);
+    font-weight: 600; border-radius: 14px;
+    min-height: 50px; padding: 0 16px; white-space: nowrap;
   }
-
-  .azioni-camera { display: flex; gap: 8px; margin-top: 10px; }
+  .azioni-camera { display: flex; gap: 10px; margin-top: 12px; }
   .azioni-camera button.primary { flex: 1; }
-  .azioni-camera input[type="file"] { display: none; }
+  input[type="file"] { display: none; }
 
-  .manuale { display: flex; gap: 8px; }
-  .manuale input {
-    font: inherit; flex: 1; min-width: 0;
-    padding: 11px 12px;
-    border: 1px solid var(--line); border-radius: var(--radius);
-    background: var(--surface); color: var(--ink);
-  }
-  .manuale input#codice { font-family: "IBM Plex Mono", monospace; letter-spacing: 0.04em; }
+  /* ---------- caselle di inserimento ---------- */
 
-  .sfuso { display: grid; grid-template-columns: 78px 1fr auto; gap: 8px; }
-  .sfuso input, .sfuso select {
-    font: inherit; min-width: 0; padding: 11px 10px;
-    border: 1px solid var(--line); border-radius: var(--radius);
-    background: var(--surface); color: var(--ink);
+  .manuale { display: flex; gap: 10px; }
+  .manuale input, .sfuso input, .sfuso select {
+    min-width: 0; height: 50px; padding: 0 14px;
+    border: none; border-radius: 14px;
+    background: var(--card); color: var(--ink);
   }
+  .manuale input { flex: 1; font-variant-numeric: tabular-nums; }
+  ::placeholder { color: var(--ink-2); opacity: 0.75; }
+  .sfuso { display: grid; grid-template-columns: 84px 1fr auto; gap: 10px; }
   .sfuso input#sfuso { grid-column: 1 / -1; }
   .sfuso input#sfuso-qta { text-align: center; font-variant-numeric: tabular-nums; }
   @media (min-width: 520px) {
-    .sfuso { grid-template-columns: 1fr 78px 130px auto; }
+    .sfuso { grid-template-columns: 1fr 84px 130px auto; }
     .sfuso input#sfuso { grid-column: auto; }
   }
 
-  .lista { display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-  .riga { background: var(--surface); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-  .riga.puntata { background: var(--amber-bg); }
-  .riga .testa { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-  .riga input.titolo {
-    font: inherit; font-weight: 600; font-size: 15px;
-    width: 100%; padding: 4px 6px; margin: -4px 0 0 -6px;
-    border: 1px solid transparent; border-radius: 6px;
-    background: transparent; color: var(--ink);
-  }
-  .riga input.titolo:focus { border-color: var(--line); background: var(--surface); }
-  .riga input.titolo::placeholder { font-weight: 500; font-style: italic; color: var(--ink-soft); }
-  .riga .meta {
-    font-family: "IBM Plex Mono", monospace; font-size: 11px;
-    color: var(--ink-soft); font-variant-numeric: tabular-nums;
-    letter-spacing: 0.04em; margin-top: 3px; overflow-wrap: break-word;
-  }
-  .riga .meta .sep { opacity: 0.45; margin: 0 5px; }
-  .riga .somma {
-    font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums;
-    font-size: 17px; white-space: nowrap; text-align: right;
-  }
-  .riga .somma.zero { color: var(--amber); }
-  .riga .somma small { display: block; font-family: "IBM Plex Sans", sans-serif; font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-soft); }
+  /* ---------- filtri ---------- */
 
-  .comando { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .comando > .voce { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-soft); font-weight: 600; min-width: 56px; }
-  .stepper { display: flex; align-items: center; gap: 2px; }
-  .stepper button {
-    font: inherit; font-size: 17px; line-height: 1; width: 34px; height: 34px;
-    border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
-    border-radius: 8px; cursor: pointer;
-  }
-  .stepper .q { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; min-width: 32px; text-align: center; font-size: 16px; }
-
-  .frazioni { display: flex; gap: 4px; flex-wrap: wrap; }
-  .frazioni button {
-    font: inherit; font-size: 13px; min-width: 38px; height: 34px; padding: 0 8px;
-    border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
-    border-radius: 8px; cursor: pointer;
-  }
-  .frazioni button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-  .comando > button.frazione {
-    font: inherit; font-size: 13px; min-width: 38px; height: 34px; padding: 0 8px;
-    border: 1px dashed var(--line); background: transparent; color: var(--ink-soft);
-    border-radius: 8px; cursor: pointer;
-  }
-  .resto {
-    font: inherit; font-size: 14px; width: 92px; padding: 7px 8px; text-align: center;
-    font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums;
-    border: 1px solid var(--line); border-radius: 8px;
-    background: var(--surface); color: var(--ink);
-  }
-  select.unita {
-    font: inherit; font-size: 14px; padding: 7px 8px;
-    border: 1px solid var(--line); border-radius: 8px;
-    background: var(--surface); color: var(--ink);
-  }
-
-  .coda { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 2px; }
-  .coda label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-soft); font-weight: 600; }
-  .coda input[type="date"] { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
-  .coda .via { font: inherit; font-size: 12px; background: none; border: none; color: var(--ink-soft); cursor: pointer; text-decoration: underline; padding: 6px 0; margin-left: auto; }
-  .riga.scade .coda label { color: var(--amber); }
-  .riga.scaduto .coda label { color: var(--laser); }
-  .filtri { margin-bottom: 10px; }
-  .filtri .chip.ordine { border-style: dashed; }
-
-  /* ---------- tema fresco e colorato ---------- */
-
-  :root {
-    --ground: #F2F7F4;
-    --accent: #17A673;
-    --radius: 14px;
-    --cielo: #2FA4D7;
-  }
-  [data-luogo="DISPENSA"] { --luogo: #E8833A; }
-  [data-luogo="FRIGO"]    { --luogo: #2FA4D7; }
-  [data-luogo="FREEZER"]  { --luogo: #4667DB; }
-  [data-luogo="CANTINA"]  { --luogo: #8E5BCF; }
-
-  body { font-family: Nunito, "IBM Plex Sans", system-ui, -apple-system, sans-serif; font-size: 16px; }
-  h1 { font-family: Nunito, system-ui, sans-serif; font-weight: 800; }
-
-  header {
-    align-items: center;
-    padding: 18px;
-    border-radius: 22px;
-    color: #FFFFFF;
-    background: linear-gradient(135deg, #17A673 0%, #2FA4D7 100%);
-    box-shadow: 0 8px 22px rgba(23, 166, 115, 0.28);
-  }
-  header .sub { color: rgba(255, 255, 255, 0.88); }
-  .totale { background: rgba(255, 255, 255, 0.2); padding: 8px 14px; border-radius: 14px; text-align: center; }
-  .totale span { color: rgba(255, 255, 255, 0.88); }
-
-  .label { font-weight: 800; }
-
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
   .chip {
-    font-weight: 700; font-size: 14px;
-    padding: 9px 15px;
-    border-width: 2px;
-    border-color: color-mix(in srgb, var(--luogo, var(--accent)) 35%, var(--line));
-    background: color-mix(in srgb, var(--luogo, var(--accent)) 9%, var(--surface));
+    flex: none; height: 34px; padding: 0 14px; border-radius: 999px;
+    background: var(--card); color: var(--ink);
+    font-size: 15px; font-weight: 500;
+    display: flex; align-items: center; gap: 6px;
   }
-  .chip[aria-pressed="true"] {
-    background: var(--luogo, var(--accent));
-    border-color: var(--luogo, var(--accent));
-    color: #FFFFFF;
-    box-shadow: 0 4px 12px color-mix(in srgb, var(--luogo, var(--accent)) 40%, transparent);
+  .chip[aria-pressed="true"] { background: var(--blu); color: #FFFFFF; font-weight: 600; }
+  .chip[aria-pressed="true"]::before { background: #FFFFFF; }
+
+  /* ---------- lista dei prodotti ---------- */
+
+  .lista { display: flex; flex-direction: column; gap: 14px; }
+  .riga { background: var(--card); border-radius: var(--raggio); overflow: hidden; transition: box-shadow 0.25s; }
+  .riga.puntata { box-shadow: 0 0 0 3px var(--blu); }
+
+  .testa { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 14px 16px 12px; }
+  .testa > div:first-child { min-width: 0; flex: 1; }
+  input.titolo {
+    width: 100%; padding: 2px 6px; margin: -2px 0 0 -6px;
+    border: none; border-radius: 8px; background: transparent;
+    font-size: 17px; font-weight: 600; text-overflow: ellipsis;
+  }
+  input.titolo:focus { background: var(--fill); }
+  input.titolo::placeholder { font-weight: 400; }
+  .meta {
+    font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums;
+    margin-top: 2px; overflow-wrap: anywhere;
+  }
+  .meta .sep { opacity: 0.5; margin: 0 5px; }
+  .etichette { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+  .etichette .luogo { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+  .etichette .avviso {
+    font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+    color: var(--arancio); background: var(--arancio-velo);
+  }
+  .riga.scaduto .etichette .avviso { color: var(--rosso); background: var(--rosso-velo); }
+
+  .somma { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .somma.zero { color: var(--arancio); }
+  .somma small { display: block; font-size: 12px; font-weight: 400; color: var(--ink-2); }
+
+  /* ogni comando è una riga di elenco: voce a sinistra, controllo a destra */
+  .comando {
+    position: relative; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    min-height: 48px; padding: 7px 16px;
+  }
+  .comando::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; height: 1px; background: var(--sep); transform: scaleY(0.5); }
+  .comando > .voce { flex: 1; min-width: 84px; font-size: 16px; }
+  .comando > .voce small { display: block; font-size: 12px; color: var(--ink-2); }
+
+  .resto, input.q, .comando input[type="date"], select.unita {
+    height: 34px; border: none; border-radius: 8px;
+    background: var(--fill); color: var(--ink); font-size: 16px;
+    font-variant-numeric: tabular-nums;
+  }
+  .resto { width: 92px; padding: 0 10px; text-align: right; }
+  input.q { width: 58px; padding: 0 8px; text-align: center; font-weight: 600; }
+  .comando input[type="date"] { padding: 0 10px; min-width: 150px; }
+  select.unita { padding: 0 8px; color: var(--blu); max-width: 130px; }
+
+  .stepper { display: flex; background: var(--fill); border-radius: 8px; overflow: hidden; }
+  .stepper button { width: 46px; height: 34px; font-size: 22px; font-weight: 400; line-height: 1; }
+  .stepper button + button { border-left: 1px solid var(--sep); }
+
+  button.frazione {
+    min-width: 40px; height: 34px; padding: 0 8px; border-radius: 8px;
+    background: var(--blu-velo); color: var(--blu); font-size: 16px; font-weight: 600;
   }
 
-  button.primary {
-    font-weight: 800;
-    background: linear-gradient(135deg, #17A673 0%, #2FA4D7 100%);
-    color: #FFFFFF;
-    box-shadow: 0 6px 16px rgba(23, 166, 115, 0.3);
+  .interruttore {
+    position: relative; width: 51px; height: 31px; border-radius: 999px; flex: none;
+    background: var(--fill-forte); transition: background 0.2s;
   }
-  button.ghost { font-weight: 700; border-width: 2px; background: var(--surface); color: var(--ink); }
-
-  .lista { gap: 12px; background: none; border: none; border-radius: 0; overflow: visible; }
-  .riga {
-    padding: 14px;
-    border-radius: 18px;
-    border: 1px solid var(--line);
-    border-left: 7px solid var(--luogo, var(--line));
-    box-shadow: 0 3px 10px rgba(20, 40, 30, 0.07);
+  .interruttore::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%;
+    background: #FFFFFF; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25); transition: transform 0.2s;
   }
-  .riga.scade { background: color-mix(in srgb, var(--amber) 9%, var(--surface)); }
-  .riga.scaduto { background: color-mix(in srgb, var(--laser) 9%, var(--surface)); }
-  .riga.puntata { outline: 3px solid var(--accent); outline-offset: 1px; }
-  .riga input.titolo { font-weight: 800; font-size: 17px; }
+  .interruttore[aria-checked="true"] { background: var(--verde); }
+  .interruttore[aria-checked="true"]::after { transform: translateX(20px); }
+  .interruttore:active { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .interruttore, .interruttore::after, .riga { transition: none; } }
 
-  .etichette { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
-  .etichette span {
-    font-size: 12px; font-weight: 800;
-    padding: 3px 10px; border-radius: 999px; white-space: nowrap;
-  }
-  .etichette .luogo {
-    color: var(--luogo);
-    background: color-mix(in srgb, var(--luogo) 14%, var(--surface));
-  }
-  .etichette .avviso { color: #FFFFFF; background: #D98A0B; }
-  .riga.scaduto .etichette .avviso { background: #D6453C; }
+  .comando.via { justify-content: center; }
+  .comando.via button { color: var(--rosso); font-size: 16px; min-height: 34px; padding: 0 12px; }
 
-  .stepper button, .frazioni button { border-radius: 10px; font-weight: 700; }
-  .stepper button { width: 38px; height: 38px; }
-  .frazioni button[aria-pressed="true"] { color: #FFFFFF; }
-  .vuoto { border-width: 2px; border-radius: 18px; }
-  .nota.allarme { font-weight: 800; }
-
-  .vuoto { background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius); padding: 22px; }
-  .vuoto p { margin: 0 0 10px; color: var(--ink-soft); font-size: 14px; }
-  .vuoto ol { margin: 0; padding-left: 20px; color: var(--ink-soft); font-size: 14px; }
-  .vuoto li { margin-bottom: 5px; }
+  .vuoto { background: var(--card); border-radius: var(--raggio); padding: 18px 16px; }
+  .vuoto p { margin: 0 0 10px; color: var(--ink-2); font-size: 15px; }
+  .vuoto ol { margin: 0; padding-left: 22px; color: var(--ink-2); font-size: 15px; }
+  .vuoto li { margin-bottom: 6px; }
   .vuoto li b { color: var(--ink); font-weight: 600; }
 
-  .fine { display: flex; gap: 8px; flex-wrap: wrap; }
-  .fine button.primary { width: auto; flex: 1; min-width: 200px; }
-  .fine input[type="file"] { display: none; }
+  /* ---------- azioni finali ---------- */
 
-  .nota { font-size: 12px; color: var(--ink-soft); margin: 0; }
-  .nota.allarme { color: var(--amber); font-weight: 500; }
+  .fine { display: flex; flex-direction: column; gap: 12px; }
+  .elenco { background: var(--card); border-radius: var(--raggio); overflow: hidden; }
+  .elenco button { display: block; width: 100%; min-height: 48px; padding: 0 16px; text-align: left; color: var(--blu); }
+  .elenco button + button { border-top: 1px solid var(--sep); }
+  .elenco button.pericolo { color: var(--rosso); }
 </style>
 </head>
 <body>
 
 <div class="wrap">
   <header>
-    <div>
-      <h1>Scanner Dispensa</h1>
-      <p class="sub">Quanto c'è in casa, ripiano per ripiano.</p>
-    </div>
-    <div class="totale"><b id="tot-pezzi">0</b><span id="tot-voci">nessun prodotto</span></div>
+    <h1>Dispensa</h1>
+    <p class="sub" id="riepilogo">Nessun prodotto</p>
   </header>
 
   <section>
     <p class="label">Dove stai guardando</p>
-    <div class="chips" id="chips"></div>
+    <div class="segmenti" id="chips"></div>
   </section>
 
   <section>
@@ -360,7 +298,7 @@
     </div>
     <div class="azioni-camera">
       <button class="primary" id="btn-camera">Accendi la fotocamera</button>
-      <button class="ghost" id="btn-foto">Leggi da una foto</button>
+      <button class="ghost" id="btn-foto">Da una foto</button>
       <input type="file" id="file-foto" accept="image/*">
     </div>
   </section>
@@ -368,7 +306,7 @@
   <section>
     <p class="label">Oppure scrivi il codice a mano</p>
     <div class="manuale">
-      <input id="codice" inputmode="numeric" placeholder="codice a barre" autocomplete="off">
+      <input id="codice" inputmode="numeric" placeholder="Codice a barre" autocomplete="off" aria-label="codice a barre">
       <button class="ghost" id="btn-codice">Aggiungi</button>
     </div>
   </section>
@@ -376,7 +314,7 @@
   <section>
     <p class="label">Prodotti sfusi, senza codice</p>
     <div class="sfuso">
-      <input id="sfuso" placeholder="pomodori, pane, mele…" autocomplete="off">
+      <input id="sfuso" placeholder="Pomodori, pane, mele…" autocomplete="off" aria-label="nome del prodotto sfuso">
       <input id="sfuso-qta" inputmode="decimal" value="1" aria-label="quanto">
       <select id="sfuso-unita" aria-label="unità di misura">
         <option value="pz">pezzi</option>
@@ -391,16 +329,18 @@
 
   <section>
     <p class="label">In casa</p>
-    <div class="chips filtri" id="filtri"></div>
+    <div class="chips" id="filtri"></div>
     <p class="nota allarme" id="allerta" style="margin-bottom: 10px"></p>
     <div id="contenuto"></div>
-    <p class="nota" id="stato" style="margin-top: 10px"></p>
+    <p class="nota" id="stato" style="margin-top: 12px" role="status"></p>
   </section>
 
   <section class="fine">
     <button class="primary" id="btn-csv">Scarica il file per Claude</button>
-    <button class="ghost" id="btn-import">Riparti da un file</button>
-    <button class="ghost" id="btn-svuota">Svuota tutto</button>
+    <div class="elenco">
+      <button id="btn-import">Riparti da un file</button>
+      <button id="btn-svuota" class="pericolo">Svuota tutto</button>
+    </div>
     <input type="file" id="file-import" accept=".csv,text/csv">
   </section>
 </div>
@@ -408,15 +348,18 @@
 <script>
 (function () {
   var LUOGHI = ["DISPENSA", "FRIGO", "FREEZER", "CANTINA"];
-  var ICONE = { TUTTO: "🏠", DISPENSA: "🥫", FRIGO: "🥛", FREEZER: "❄️", CANTINA: "🍷" };
-  function nomeLuogo(l) { return ICONE[l] + " " + l.charAt(0) + l.slice(1).toLowerCase(); }
+  function nomeLuogo(l) { return l.charAt(0) + l.slice(1).toLowerCase(); }
   var dove = "DISPENSA";
   var items = new Map();
   var editing = false;
-  var puntato = "";
+  var puntato = "";      /* riga evidenziata dopo una scansione */
+  var daMostrare = "";   /* riga da portare a schermo, una volta sola */
+  var timerPunta = null;
   var reader = null;
   var stream = null;
   var acceso = false;
+  var avvio = false;     /* la fotocamera si sta accendendo */
+  var letture = 0;
   var motore = "";
 
   /* Cosa mostra la lista: un solo luogo oppure tutto, e in che ordine. */
@@ -447,16 +390,28 @@
     return String(pulito(n)).replace(".", ",");
   }
 
+  function pezzi(n) {
+    return scritto(n) + (pulito(n) === 1 ? " pezzo" : " pezzi");
+  }
+
+  /* "1.000 g" e "1,000 ml" sono mille, non uno: con grammi e millilitri
+     un separatore seguito da tre cifre è quello delle migliaia. */
+  function cifra(testo, unita) {
+    if (/^\d{1,3}[.,]\d{3}$/.test(testo) && /^(g|gr|ml)$/.test(unita)) {
+      return parseFloat(testo.replace(/[.,]/, ""));
+    }
+    return parseFloat(testo.replace(",", "."));
+  }
+
   /* Legge "500 g", "1,5 L", "6 x 125 g" e ne ricava numero + unità. */
   function leggiFormato(testo) {
-    var t = String(testo || "").toLowerCase().replace(",", ".");
-    var molt = t.match(/(\d+)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(kg|g|gr|l|lt|ml|cl)/);
+    var t = String(testo || "").toLowerCase();
+    var molt = t.match(/(\d+)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(kg|gr|g|lt|l|ml|cl)\b/);
     if (molt) {
-      var tot = parseFloat(molt[1]) * parseFloat(molt[2]);
-      return normalizza(tot, molt[3]);
+      return normalizza(parseFloat(molt[1]) * cifra(molt[2], molt[3]), molt[3]);
     }
-    var uno = t.match(/(\d+(?:\.\d+)?)\s*(kg|g|gr|l|lt|ml|cl)\b/);
-    if (uno) { return normalizza(parseFloat(uno[1]), uno[2]); }
+    var uno = t.match(/(\d+(?:[.,]\d+)?)\s*(kg|gr|g|lt|l|ml|cl)\b/);
+    if (uno) { return normalizza(cifra(uno[1], uno[2]), uno[2]); }
     return null;
   }
 
@@ -465,6 +420,30 @@
     if (u === "lt") u = "l";
     if (u === "cl") { q = q * 10; u = "ml"; }
     return { qta: q, unita: u };
+  }
+
+  /* La data di oggi secondo l'orologio del telefono (non quello di Greenwich). */
+  function oggiLocale() {
+    var d = new Date();
+    var due = function (n) { return (n < 10 ? "0" : "") + n; };
+    return d.getFullYear() + "-" + due(d.getMonth() + 1) + "-" + due(d.getDate());
+  }
+
+  /* Il nome di uno sfuso diventa la sua chiave: senza accenti, solo lettere e cifre. */
+  function chiaveDa(nome) {
+    var s = String(nome || "").toUpperCase();
+    if (s.normalize) { s = s.normalize("NFD").replace(/[̀-ͯ]/g, ""); }
+    return s.replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  }
+
+  /* L'ultima cifra di un codice a barre è una cifra di controllo: se non torna, il codice è sbagliato. */
+  function codiceValido(c) {
+    if ([8, 12, 13, 14].indexOf(c.length) < 0) return false;
+    var s = 0;
+    for (var i = 0; i < c.length - 1; i++) {
+      s += (+c.charAt(c.length - 2 - i)) * (i % 2 === 0 ? 3 : 1);
+    }
+    return (10 - (s % 10)) % 10 === +c.charAt(c.length - 1);
   }
 
   /* ---------- memoria ---------- */
@@ -480,8 +459,9 @@
     if (it.aperta === undefined) { it.aperta = false; }
     if (it.residua === undefined) { it.residua = 0; }
     if (it.resUnita === undefined) { it.resUnita = it.confUnita; }
-    if (it.chiuse === undefined) { it.chiuse = 0; }
-    if (it.confQta === undefined) { it.confQta = 0; }
+    it.chiuse = numero(it.chiuse, 0);
+    it.confQta = numero(it.confQta, 0);
+    if (!it.dove) { it.dove = "DISPENSA"; }
     delete it.unita;
     return it;
   }
@@ -489,13 +469,22 @@
   function carica() {
     try {
       var raw = JSON.parse(localStorage.getItem("dispensa") || "[]");
-      raw.forEach(function (it) { items.set(it.id, migra(it)); });
+      if (!Array.isArray(raw)) return;
+      raw.forEach(function (it) {
+        /* una voce rovinata non deve far perdere le altre */
+        if (it && typeof it === "object" && it.id) { items.set(String(it.id), migra(it)); }
+      });
     } catch (e) {}
   }
 
   function salva() {
-    try { localStorage.setItem("dispensa", JSON.stringify(Array.from(items.values()))); } catch (e) {}
+    var riuscito = true;
+    try { localStorage.setItem("dispensa", JSON.stringify(Array.from(items.values()))); }
+    catch (e) { riuscito = false; }
     render();
+    if (!riuscito) {
+      nota("Attenzione: il telefono non mi lascia salvare la lista. Scarica subito il file, altrimenti chiudendo la pagina la perdi.", true);
+    }
   }
 
   /* Rubrica dei formati scritti a mano: barcode → quanto contiene una confezione.
@@ -503,7 +492,7 @@
   var rubrica = {};
 
   function caricaRubrica() {
-    try { rubrica = JSON.parse(localStorage.getItem("formati") || "{}"); } catch (e) { rubrica = {}; }
+    try { rubrica = JSON.parse(localStorage.getItem("formati") || "{}") || {}; } catch (e) { rubrica = {}; }
   }
 
   function ricorda(barcode, qta, unita) {
@@ -524,6 +513,11 @@
     return "pezzi";
   }
 
+  function unitaBuona(v, difetto) {
+    v = String(v || "").toLowerCase();
+    return (v === "pz" || PESO[v] || VOLUME[v]) ? v : difetto;
+  }
+
   /* Porta una quantità da un'unità all'altra, se sono parenti (g↔kg, ml↔l). */
   function converti(q, da, a) {
     if (da === a) return q;
@@ -534,34 +528,39 @@
     return q * tab[da] / tab[a];
   }
 
-  function residuaIn(it, unita) {
-    if (!it.aperta) return 0;
-    var r = converti(numero(it.residua, 0), it.resUnita || unita, unita);
-    return r === null ? 0 : r;
-  }
-
-  /* Quanto ce n'è in tutto: le confezioni intere più quel che resta in quella aperta. */
+  /* Quanto ce n'è in tutto: le confezioni intere più quel che resta in quella aperta.
+     `certo` è falso quando le due parti non si possono sommare (formato non dichiarato,
+     oppure residuo in un'unità che non è parente del formato: grammi con pezzi). */
   function totale(it) {
     var u = it.confUnita || "pz";
-    if (u === "pz") {
-      return { qta: pulito(it.chiuse + (it.aperta ? numero(it.residua, 0) : 0)), unita: "pz", certo: true };
-    }
-    if (it.confQta > 0) {
-      return { qta: pulito(it.chiuse * it.confQta + residuaIn(it, u)), unita: u, certo: true };
-    }
-    /* formato non ancora dichiarato: non posso sommare confezioni e residuo */
-    return { qta: pulito(residuaIn(it, u)), unita: u, certo: false };
+    var chiuse = numero(it.chiuse, 0);
+    var res = it.aperta ? numero(it.residua, 0) : 0;
+    var ru = it.resUnita || u;
+    var base, baseCerta = true;
+    if (it.confQta > 0) { base = chiuse * it.confQta; }       /* 2 confezioni da 500 g, 2 da 6 uova */
+    else if (u === "pz") { base = chiuse; }                   /* contato a pezzi */
+    else { base = 0; baseCerta = (chiuse === 0); }            /* a peso, formato non dichiarato */
+    var conv = res > 0 ? converti(res, ru, u) : 0;
+    if (baseCerta && conv !== null) { return { qta: pulito(base + conv), unita: u, certo: true }; }
+    if (baseCerta && base === 0) { return { qta: pulito(res), unita: ru, certo: true }; }
+    return { qta: pulito(chiuse + res), unita: u, certo: false };
   }
 
   function totaleScritto(it) {
     var t = totale(it);
-    if (t.unita === "pz") {
-      return scritto(t.qta) + (t.qta === 1 ? " pezzo" : " pezzi");
-    }
-    if (t.certo) { return scritto(t.qta) + " " + t.unita; }
+    if (t.certo) { return t.unita === "pz" ? pezzi(t.qta) : scritto(t.qta) + " " + t.unita; }
+    var u = it.confUnita || "pz";
+    var chiuse = numero(it.chiuse, 0);
     var voci = [];
-    if (it.chiuse > 0) { voci.push(it.chiuse + (it.chiuse === 1 ? " conf." : " conf.")); }
-    if (it.aperta) { voci.push(scritto(numero(it.residua, 0)) + " " + (it.resUnita || t.unita)); }
+    if (chiuse > 0) {
+      if (it.confQta > 0) { voci.push(u === "pz" ? pezzi(chiuse * it.confQta) : scritto(chiuse * it.confQta) + " " + u); }
+      else if (u === "pz") { voci.push(pezzi(chiuse)); }
+      else { voci.push(scritto(chiuse) + " conf."); }
+    }
+    if (it.aperta && numero(it.residua, 0) > 0) {
+      var ru = it.resUnita || u;
+      voci.push(ru === "pz" ? pezzi(numero(it.residua, 0)) : scritto(numero(it.residua, 0)) + " " + ru);
+    }
     return voci.length ? voci.join(" + ") : "0";
   }
 
@@ -577,7 +576,7 @@
     box.innerHTML = "";
     LUOGHI.forEach(function (l) {
       var b = document.createElement("button");
-      b.className = "chip";
+      b.className = "seg";
       b.type = "button";
       b.textContent = nomeLuogo(l);
       b.setAttribute("data-luogo", l);
@@ -643,14 +642,14 @@
       var b = document.createElement("button");
       b.className = "chip";
       b.type = "button";
-      b.textContent = nomeLuogo(l) + " " + quanti;
+      b.textContent = (l === "TUTTO" ? "Tutto" : nomeLuogo(l)) + " " + quanti;
       if (l !== "TUTTO") { b.setAttribute("data-luogo", l); }
       b.setAttribute("aria-pressed", String(l === vista));
       b.onclick = function () { vista = l; ricordaVista(); render(); };
       box.appendChild(b);
     });
     var o = document.createElement("button");
-    o.className = "chip ordine";
+    o.className = "chip";
     o.type = "button";
     o.textContent = "Prima ciò che scade";
     o.setAttribute("aria-pressed", String(perScadenza));
@@ -658,16 +657,40 @@
     box.appendChild(o);
   }
 
+  /* Mentre un dito è appoggiato sulla lista non la ridisegno: altrimenti il pulsante
+     che stai toccando verrebbe sostituito sotto il dito e il tocco andrebbe perso.
+     Il ridisegno resta in sospeso e parte appena il tocco è concluso. */
+  var premendo = false, sospeso = false, timerPremi = null;
+
+  function rilascia() {
+    clearTimeout(timerPremi);
+    premendo = false;
+    if (sospeso) { render(); }
+  }
+
+  contenuto.addEventListener("pointerdown", function () { premendo = true; clearTimeout(timerPremi); }, true);
+  ["pointerup", "pointercancel"].forEach(function (tipo) {
+    document.addEventListener(tipo, function () {
+      if (premendo) { clearTimeout(timerPremi); timerPremi = setTimeout(rilascia, 400); }
+    }, true);
+  });
+  document.addEventListener("click", function () { if (premendo) { rilascia(); } });
+
+  function finito() {
+    editing = false;
+    if (sospeso && !premendo) { render(); }
+  }
+
   function render() {
-    if (editing) return;
+    if (editing || premendo) { sospeso = true; return; }
+    sospeso = false;
     var lista = ordinati();
     filtri(lista);
     $("allerta").textContent = "";
     var finiti = lista.filter(function (it) { return totale(it).qta <= 0; }).length;
-    $("tot-pezzi").textContent = lista.length;
-    $("tot-voci").textContent = lista.length === 0 ? "nessun prodotto"
-      : finiti > 0 ? (lista.length === 1 ? "1 prodotto" : "prodotti") + " · " + finiti + " finiti"
-      : (lista.length === 1 ? "prodotto" : "prodotti");
+    $("riepilogo").textContent = lista.length === 0 ? "Nessun prodotto"
+      : lista.length + (lista.length === 1 ? " prodotto" : " prodotti") +
+        (finiti > 0 ? " · " + finiti + (finiti === 1 ? " finito" : " finiti") : "");
 
     if (lista.length === 0) {
       contenuto.innerHTML = '<div class="vuoto"><p>Qui compare quello che hai in casa, con quanto ne resta.</p>' +
@@ -701,34 +724,65 @@
     contenuto.innerHTML = "";
     contenuto.appendChild(el);
 
-    if (puntato) {
-      var vista = document.getElementById("r-" + puntato);
-      if (vista && vista.scrollIntoView) { vista.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    /* porto a schermo la riga appena letta, ma una volta sola: poi la pagina resta ferma */
+    if (daMostrare) {
+      var bersaglio = document.getElementById("r-" + daMostrare);
+      daMostrare = "";
+      if (bersaglio && bersaglio.scrollIntoView) { bersaglio.scrollIntoView({ block: "center", behavior: "smooth" }); }
     }
+  }
+
+  function evidenzia(id) {
+    puntato = id;
+    daMostrare = id;
+    clearTimeout(timerPunta);
+    timerPunta = setTimeout(function () {
+      /* tolgo solo il bordo: ridisegnare tutto chiuderebbe una tendina aperta */
+      var e = document.getElementById("r-" + puntato);
+      if (e) { e.classList.remove("puntata"); }
+      puntato = "";
+    }, 4000);
+  }
+
+  function comando(etichetta, sotto) {
+    var box = document.createElement("div");
+    box.className = "comando";
+    var lab = document.createElement("span");
+    lab.className = "voce";
+    lab.textContent = etichetta;
+    if (sotto) {
+      var s = document.createElement("small");
+      s.textContent = sotto;
+      lab.appendChild(s);
+    }
+    box.appendChild(lab);
+    return box;
   }
 
   function riga(it) {
     var t = totale(it);
+    var u = it.confUnita || "pz";
     var r = document.createElement("div");
     var gg = giorni(it);
     r.className = "riga" + (gg !== null && gg < 0 ? " scaduto" : (gg !== null && gg <= SOGLIA ? " scade" : "")) +
       (puntato === it.id ? " puntata" : "");
     r.id = "r-" + it.id;
+    r.setAttribute("data-luogo", it.dove);
 
     /* intestazione: nome, dati, totale */
     var testa = document.createElement("div");
     testa.className = "testa";
 
     var sx = document.createElement("div");
-    sx.style.minWidth = "0";
-    sx.style.flex = "1";
     var nome = document.createElement("input");
     nome.className = "titolo";
     nome.value = it.prodotto || "";
-    nome.placeholder = it.stato === "cerco" ? "cerco il prodotto…" : "scrivi qui il nome";
+    nome.placeholder = it.stato === "cerco" ? "Cerco il prodotto…"
+      : it.stato === "rete" ? "Catalogo non raggiunto: scrivi il nome"
+      : "Scrivi qui il nome";
     nome.setAttribute("aria-label", "nome del prodotto");
     nome.onfocus = function () { editing = true; };
-    nome.onblur = function () { editing = false; };
+    nome.onblur = finito;
     nome.onchange = function () {
       it.prodotto = nome.value.trim();
       it.ts = Date.now();
@@ -746,26 +800,24 @@
     meta.innerHTML = voci.map(function (v) { return String(v).replace(/[<>&]/g, ""); }).join('<span class="sep">·</span>');
     sx.appendChild(meta);
 
-    r.setAttribute("data-luogo", it.dove);
     var etichette = document.createElement("div");
     etichette.className = "etichette";
     var targa = document.createElement("span");
     targa.className = "luogo";
-    targa.textContent = ICONE[it.dove] ? nomeLuogo(it.dove) : it.dove;
+    targa.textContent = nomeLuogo(it.dove);
     etichette.appendChild(targa);
     if (avviso(gg)) {
       var allarme = document.createElement("span");
       allarme.className = "avviso";
-      allarme.textContent = "⏰ " + avviso(gg);
+      allarme.textContent = avviso(gg);
       etichette.appendChild(allarme);
     }
     sx.appendChild(etichette);
 
     var somma = document.createElement("div");
     somma.className = "somma" + (t.qta <= 0 ? " zero" : "");
-    somma.innerHTML = "";
     var forte = document.createElement("span");
-    forte.textContent = t.qta <= 0 ? "finito" : totaleScritto(it);
+    forte.textContent = t.qta <= 0 ? "Finito" : totaleScritto(it);
     var sotto = document.createElement("small");
     sotto.textContent = t.qta <= 0 ? "da ricomprare" : "in casa";
     somma.appendChild(forte);
@@ -777,11 +829,7 @@
 
     /* costruisce una casella numerica con la sua unità di misura */
     function misura(etichetta, valore, unita, segnaposto, quandoCambia) {
-      var box = document.createElement("div");
-      box.className = "comando";
-      var lab = document.createElement("span");
-      lab.className = "voce";
-      lab.textContent = etichetta;
+      var box = comando(etichetta);
       var num = document.createElement("input");
       num.className = "resto";
       num.inputMode = "decimal";
@@ -791,11 +839,11 @@
       var sel = document.createElement("select");
       sel.className = "unita";
       sel.setAttribute("aria-label", "unità di misura, " + etichetta);
-      UNITA.forEach(function (u) {
+      UNITA.forEach(function (voce) {
         var o = document.createElement("option");
-        o.value = u[0];
-        o.textContent = u[1];
-        if (u[0] === unita) { o.selected = true; }
+        o.value = voce[0];
+        o.textContent = voce[1];
+        if (voce[0] === unita) { o.selected = true; }
         sel.appendChild(o);
       });
       var manda = function () {
@@ -803,141 +851,160 @@
         quandoCambia(Math.max(0, numero(num.value, 0)), sel.value);
       };
       num.onfocus = function () { editing = true; };
-      num.onblur = function () { editing = false; };
+      num.onblur = finito;
       num.onchange = manda;
       sel.onchange = manda;
-      box.appendChild(lab);
       box.appendChild(num);
       box.appendChild(sel);
       return box;
     }
 
     /* formato della confezione: lo propone il catalogo, lo corregge Carlo */
-    r.appendChild(misura("Formato", it.confQta, it.confUnita || "pz", "quanto contiene",
-      function (q, u) {
-        var prima = it.confUnita;
+    r.appendChild(misura("Formato", it.confQta, u, "quanto",
+      function (q, nuova) {
+        var prima = it.confUnita || "pz";
         it.confQta = q;
-        it.confUnita = u;
-        ricorda(it.barcode, q, u);
-        if (u !== "pz" && (!it.resUnita || famiglia(it.resUnita) !== famiglia(u) || prima === "pz")) {
-          it.resUnita = u;
+        it.confUnita = nuova;
+        ricorda(it.barcode, q, nuova);
+        var conResiduo = it.aperta && numero(it.residua, 0) > 0;
+        if (!conResiduo) {
+          it.resUnita = nuova;
+        } else if (famiglia(prima) !== famiglia(nuova) && famiglia(it.resUnita || prima) !== famiglia(nuova)) {
+          /* da grammi a pezzi (o viceversa): il vecchio residuo non vuol dire più niente */
+          it.residua = q > 0 ? pulito(q / 2) : 0;
+          it.resUnita = nuova;
+          nota("Hai cambiato tipo di formato: ricontrolla quanto resta nella confezione aperta.", true);
         }
         it.ts = Date.now();
         salva();
       }));
 
     /* quante confezioni intere */
-    var c = document.createElement("div");
-    c.className = "comando";
-    var etic = document.createElement("span");
-    etic.className = "voce";
-    etic.textContent = (it.confUnita || "pz") === "pz" ? "Pezzi" : "Confezioni";
+    var aConfezioni = it.confQta > 0 || u !== "pz";
+    var c = comando(aConfezioni ? "Confezioni chiuse" : "Pezzi interi",
+      it.confQta > 0 ? "da " + (u === "pz" ? pezzi(it.confQta) : scritto(it.confQta) + " " + u) : "");
+    var q = document.createElement("input");
+    q.className = "q";
+    q.inputMode = "decimal";
+    q.value = scritto(numero(it.chiuse, 0));
+    q.setAttribute("aria-label", aConfezioni ? "confezioni chiuse" : "pezzi interi");
+    q.onfocus = function () { editing = true; q.select(); };
+    q.onblur = finito;
+    q.onchange = function () {
+      editing = false;
+      it.chiuse = pulito(Math.max(0, numero(q.value, 0)));
+      it.ts = Date.now();
+      salva();
+    };
     var st = document.createElement("div");
     st.className = "stepper";
     var meno = document.createElement("button");
     meno.type = "button";
     meno.textContent = "−";
     meno.setAttribute("aria-label", "una in meno");
-    meno.onclick = function () { it.chiuse = Math.max(0, it.chiuse - 1); it.ts = Date.now(); salva(); };
-    var q = document.createElement("span");
-    q.className = "q";
-    q.textContent = it.chiuse;
+    meno.onclick = function () { it.chiuse = pulito(Math.max(0, numero(it.chiuse, 0) - 1)); it.ts = Date.now(); salva(); };
     var piu = document.createElement("button");
     piu.type = "button";
     piu.textContent = "+";
     piu.setAttribute("aria-label", "una in più");
-    piu.onclick = function () { it.chiuse += 1; it.ts = Date.now(); salva(); };
+    piu.onclick = function () { it.chiuse = pulito(numero(it.chiuse, 0) + 1); it.ts = Date.now(); salva(); };
     st.appendChild(meno);
-    st.appendChild(q);
     st.appendChild(piu);
-    c.appendChild(etic);
+    c.appendChild(q);
     c.appendChild(st);
-    if (it.confQta > 0 && (it.confUnita || "pz") !== "pz") {
-      var da = document.createElement("span");
-      da.className = "voce";
-      da.style.minWidth = "auto";
-      da.textContent = "da " + scritto(it.confQta) + " " + it.confUnita;
-      c.appendChild(da);
-    }
     r.appendChild(c);
 
-    /* confezione aperta: sì o no — sempre disponibile */
-    {
-      var ap = document.createElement("div");
-      ap.className = "comando";
-      var etic2 = document.createElement("span");
-      etic2.className = "voce";
-      etic2.textContent = "Aperta";
-      var scelta = document.createElement("div");
-      scelta.className = "frazioni";
-      [["no", false], ["sì", true]].forEach(function (opzione) {
+    /* confezione aperta: interruttore, più le frazioni rapide */
+    var ap = comando("Aperta");
+    if (it.aperta && it.confQta > 0) {
+      [["¼", 0.25], ["½", 0.5], ["¾", 0.75]].forEach(function (coppia) {
         var b = document.createElement("button");
         b.type = "button";
-        b.textContent = opzione[0];
-        b.setAttribute("aria-pressed", String(!!it.aperta === opzione[1]));
+        b.className = "frazione";
+        b.textContent = coppia[0];
+        b.setAttribute("aria-label", "resta " + coppia[0] + " della confezione");
         b.onclick = function () {
-          it.aperta = opzione[1];
-          if (it.aperta && !numero(it.residua, 0) && it.confQta > 0) {
-            it.residua = pulito(it.confQta / 2);
-            it.resUnita = it.confUnita;
-          }
+          it.residua = pulito(it.confQta * coppia[1]);
+          it.resUnita = it.confUnita;
           it.ts = Date.now();
           salva();
         };
-        scelta.appendChild(b);
+        ap.appendChild(b);
       });
-      ap.appendChild(etic2);
-      ap.appendChild(scelta);
-      if (it.aperta && it.confQta > 0) {
-        [["¼", 0.25], ["½", 0.5], ["¾", 0.75]].forEach(function (coppia) {
-          var b = document.createElement("button");
-          b.type = "button";
-          b.className = "frazione";
-          b.textContent = coppia[0];
-          b.title = "un " + coppia[0] + " della confezione";
-          b.onclick = function () {
-            it.residua = pulito(it.confQta * coppia[1]);
-            it.resUnita = it.confUnita;
-            it.ts = Date.now();
-            salva();
-          };
-          ap.appendChild(b);
-        });
+    }
+    var leva = document.createElement("button");
+    leva.type = "button";
+    leva.className = "interruttore";
+    leva.setAttribute("role", "switch");
+    leva.setAttribute("aria-checked", String(!!it.aperta));
+    leva.setAttribute("aria-label", "confezione aperta");
+    leva.onclick = function () {
+      var messaggio = "";
+      if (!it.aperta) {
+        it.aperta = true;
+        /* quella aperta è una di quelle che avevo contato come chiuse: non va contata due volte */
+        if (numero(it.chiuse, 0) >= 1) {
+          it.chiuse = pulito(it.chiuse - 1);
+          messaggio = "Ho tolto una confezione dalle chiuse: quella aperta la conto a parte.";
+        }
+        if (!numero(it.residua, 0)) {
+          if (it.confQta > 0) { it.residua = pulito(it.confQta / 2); it.resUnita = it.confUnita; }
+          else if (u === "pz") { it.residua = 0.5; it.resUnita = "pz"; }
+        }
+      } else {
+        it.aperta = false;
+        messaggio = "Confezione aperta tolta dal conto: se era ancora intera, aggiungila alle chiuse.";
       }
-      r.appendChild(ap);
+      it.ts = Date.now();
+      salva();
+      nota(messaggio);
+    };
+    ap.appendChild(leva);
+    r.appendChild(ap);
 
-      /* quantità residua nella confezione aperta */
-      if (it.aperta) {
-        r.appendChild(misura("Residua", numero(it.residua, 0), it.resUnita || it.confUnita, "quanto resta",
-          function (q2, u2) {
-            it.residua = q2;
-            it.resUnita = u2;
-            it.ts = Date.now();
-            salva();
-          }));
-      }
+    /* quantità residua nella confezione aperta */
+    if (it.aperta) {
+      r.appendChild(misura("Ne resta", numero(it.residua, 0), it.resUnita || u, "quanto",
+        function (q2, u2) {
+          var messaggio = "";
+          if (it.confQta > 0) {
+            var inFormato = converti(q2, u2, it.confUnita);
+            if (inFormato !== null && inFormato > it.confQta) {
+              q2 = pulito(converti(it.confQta, it.confUnita, u2));
+              messaggio = "Nella confezione aperta non può restare più del formato: ho scritto " +
+                scritto(q2) + " " + u2 + ".";
+            }
+          }
+          it.residua = q2;
+          it.resUnita = u2;
+          it.ts = Date.now();
+          salva();
+          nota(messaggio, !!messaggio);
+        }));
     }
 
     /* scadenza */
-    var coda = document.createElement("div");
-    coda.className = "coda";
-    var lab = document.createElement("label");
-    lab.textContent = "Scade il";
-    lab.htmlFor = "d-" + it.id;
+    var sc = comando("Scade il");
+    sc.firstChild.id = "l-" + it.id;
     var data = document.createElement("input");
     data.type = "date";
-    data.id = "d-" + it.id;
+    data.setAttribute("aria-labelledby", "l-" + it.id);
     data.value = it.scadenza || "";
     data.onfocus = function () { editing = true; };
-    data.onblur = function () { editing = false; };
+    data.onblur = finito;
     data.onchange = function () { it.scadenza = data.value; editing = false; salva(); };
+    sc.appendChild(data);
+    r.appendChild(sc);
+
+    /* dove si trova */
+    var dv = comando("Si trova in");
     var luogo = document.createElement("select");
     luogo.className = "unita";
     luogo.setAttribute("aria-label", "dove si trova");
     LUOGHI.forEach(function (l) {
       var o = document.createElement("option");
       o.value = l;
-      o.textContent = l.charAt(0) + l.slice(1).toLowerCase();
+      o.textContent = nomeLuogo(l);
       if (l === it.dove) { o.selected = true; }
       luogo.appendChild(o);
     });
@@ -945,9 +1012,9 @@
       var suffisso = it.id.slice(it.dove.length + 1);
       var nuovoId = luogo.value + "_" + suffisso;
       if (items.has(nuovoId)) {
+        var pieno = nomeLuogo(luogo.value).toLowerCase();
         luogo.value = it.dove;
-        nota("In " + luogo.options[luogo.selectedIndex].text.toLowerCase() +
-          " c'è già lo stesso prodotto: uniscili a mano, o togli una delle due righe.", true);
+        nota("In " + pieno + " c'è già lo stesso prodotto: uniscili a mano, o togli una delle due righe.", true);
         return;
       }
       items.delete(it.id);
@@ -957,38 +1024,48 @@
       items.set(nuovoId, it);
       salva();
     };
+    dv.appendChild(luogo);
+    r.appendChild(dv);
 
+    var fondo = document.createElement("div");
+    fondo.className = "comando via";
     var via = document.createElement("button");
     via.type = "button";
-    via.className = "via";
-    via.textContent = "togli dalla lista";
+    via.textContent = "Togli dalla lista";
     via.onclick = function () { items.delete(it.id); salva(); };
-    coda.appendChild(lab);
-    coda.appendChild(data);
-    coda.appendChild(luogo);
-    coda.appendChild(via);
-    r.appendChild(coda);
+    fondo.appendChild(via);
+    r.appendChild(fondo);
 
     return r;
   }
 
   /* ---------- OpenFoodFacts ---------- */
 
+  var inCorso = new Set();
+
   function cerca(it) {
+    if (inCorso.has(it)) return;
+    inCorso.add(it);
+    it.stato = "cerco";
     var url = "https://world.openfoodfacts.org/api/v2/product/" + encodeURIComponent(it.barcode) +
       "?fields=product_name,product_name_it,brands,quantity,product_quantity,product_quantity_unit,nutriments";
     fetch(url, { headers: { "Accept": "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        var p = (d && d.status === 1 && d.product) ? d.product : null;
+        /* una risposta senza `status` non viene dal catalogo: la tratto come rete assente */
+        if (!d || d.status === undefined) { throw new Error("risposta non valida"); }
+        inCorso.delete(it);
+        if (items.get(it.id) !== it) return; /* nel frattempo è stato tolto dalla lista */
+        var p = (d.status === 1 && d.product) ? d.product : null;
         if (!p) {
           it.stato = "ignoto";
           salva();
-          nota("Il codice " + it.barcode + " non è in catalogo: scrivi tu il nome nel foglio, il resto resta buono.");
+          nota("Il codice " + it.barcode + " non è in catalogo: scrivi tu il nome sulla sua riga, il resto resta buono.");
           return;
         }
         var n = p.nutriments || {};
-        it.prodotto = (p.product_name_it || p.product_name || "").trim();
+        /* il nome che hai scritto tu vale più di quello del catalogo */
+        if (!it.prodotto) { it.prodotto = (p.product_name_it || p.product_name || "").trim(); }
         it.marca = (p.brands || "").split(",")[0].trim();
         it.formato = (p.quantity || "").trim();
 
@@ -1000,16 +1077,13 @@
         } else if (isFinite(qta) && qta > 0 && (PESO[um] || VOLUME[um])) {
           it.confQta = qta;
           it.confUnita = um;
-          it.resUnita = um;
+          if (!(it.aperta && numero(it.residua, 0) > 0)) { it.resUnita = um; }
         } else {
           var f = leggiFormato(it.formato);
           if (f) {
             it.confQta = f.qta;
             it.confUnita = f.unita;
-            it.resUnita = f.unita;
-          } else {
-            /* il catalogo non dice quanto contiene: meglio vuoto che un numero senza senso */
-            it.confQta = 0;
+            if (!(it.aperta && numero(it.residua, 0) > 0)) { it.resUnita = f.unita; }
           }
         }
         it.kcal = n["energy-kcal_100g"];
@@ -1020,11 +1094,21 @@
         salva();
       })
       .catch(function () {
-        it.stato = "ignoto";
+        inCorso.delete(it);
+        if (items.get(it.id) !== it) return;
+        it.stato = "rete";
         salva();
-        nota("Non riesco a raggiungere il catalogo prodotti: i codici li salvo lo stesso.", true);
+        nota("Non riesco a raggiungere il catalogo prodotti: i codici li salvo lo stesso e riprovo da solo appena torna la rete.", true);
       });
   }
+
+  /* Riprova le ricerche rimaste a metà: rete assente, o pagina chiusa mentre cercavo. */
+  function riprova() {
+    items.forEach(function (it) {
+      if (it.barcode && (it.stato === "cerco" || it.stato === "rete")) { cerca(it); }
+    });
+  }
+  window.addEventListener("online", riprova);
 
   /* ---------- aggiunta ---------- */
 
@@ -1058,7 +1142,7 @@
   }
 
   function aggiungi(barcode, nomeManuale, qta, unita) {
-    var chiave = barcode || String(nomeManuale || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+    var chiave = barcode || chiaveDa(nomeManuale);
     var id = dove + "_" + (chiave || ("S" + Date.now()));
     var esiste = items.get(id);
     /* se la lista mostra un altro luogo, la riapro: il prodotto appena letto deve vedersi */
@@ -1066,13 +1150,14 @@
 
     if (esiste) {
       /* già in inventario: non conto due volte, ti porto sulla sua riga */
-      puntato = id;
+      evidenzia(id);
       esiste.ts = Date.now();
       salva();
       nota((esiste.prodotto || chiave) + " è già in lista: correggi lì quanto ne resta.");
+      /* se la prima volta il catalogo non aveva risposto, ci riprovo adesso */
+      if (esiste.barcode && esiste.stato !== "ok" && esiste.stato !== "manuale") { cerca(esiste); }
       beep(true);
       lampeggia();
-      setTimeout(function () { puntato = ""; render(); }, 4000);
       return;
     }
 
@@ -1093,39 +1178,52 @@
       ts: Date.now()
     };
     var noto = barcode ? rubrica[barcode] : null;
-    if (noto) {
+    if (noto && noto.qta > 0) {
       it.confQta = noto.qta;
-      it.confUnita = noto.unita;
-      it.resUnita = noto.unita;
+      it.confUnita = unitaBuona(noto.unita, "pz");
+      it.resUnita = it.confUnita;
     }
     items.set(id, it);
-    puntato = id;
+    evidenzia(id);
     salva();
     if (barcode) { cerca(it); }
     else { nota("Aggiunto " + totaleScritto(it) + " di " + nomeManuale + " in " + dove.toLowerCase() + "."); }
     beep(false);
     if (navigator.vibrate) { try { navigator.vibrate(45); } catch (e) {} }
     lampeggia();
-    setTimeout(function () { puntato = ""; render(); }, 4000);
   }
 
   /* ---------- fotocamera ---------- */
 
   var ultimo = { cod: "", t: 0 };
+  var FORMATI = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"];
 
   function letto(cod) {
     cod = String(cod || "").replace(/\D/g, "");
     if (cod.length < 8) return;
+    /* un codice a 12 o 13 cifre con la cifra di controllo sbagliata è una lettura storta: la scarto */
+    if ((cod.length === 12 || cod.length === 13) && !codiceValido(cod)) return;
     var ora = Date.now();
     if (cod === ultimo.cod && ora - ultimo.t < 3000) return;
     ultimo = { cod: cod, t: ora };
+    letture++;
     aggiungi(cod, "", 1, "pz");
+  }
+
+  /* Il lettore del browser, se c'è e se funziona davvero su questo dispositivo. */
+  function lettoreDelBrowser() {
+    if (!("BarcodeDetector" in window)) return null;
+    try { return new window.BarcodeDetector({ formats: FORMATI }); } catch (e) { return null; }
+  }
+
+  function fermaFlusso() {
+    if (reader) { try { reader.reset(); } catch (e) {} reader = null; }
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
   }
 
   function spegni() {
     acceso = false;
-    if (reader) { try { reader.reset(); } catch (e) {} reader = null; }
-    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    fermaFlusso();
     camera.className = "camera off";
     msg.innerHTML = "<b>Fotocamera spenta</b>Accendila e avvicina il codice a barre finché non senti il segnale.";
     msg.style.display = "";
@@ -1134,6 +1232,8 @@
 
   function errore(e) {
     acceso = false;
+    avvio = false;
+    fermaFlusso();
     camera.className = "camera off";
     var nome = (e && e.name) ? e.name : "nessun errore";
     var testo = (e && e.message) ? e.message : "getUserMedia non esiste su questo browser";
@@ -1142,15 +1242,17 @@
       : (nome === "NotFoundError" || nome === "OverconstrainedError")
         ? "Non trovo nessuna fotocamera su questo dispositivo. Scrivi i codici a mano qui sotto."
         : "Questo dispositivo non mi lascia usare la fotocamera. Scrivi i codici a mano qui sotto: funziona uguale, solo più lento.";
-    msg.innerHTML = "<b>Fotocamera non disponibile</b>" + causa +
-      '<span class="tecnico">' + nome + ": " + testo + "</span>";
+    msg.innerHTML = "<b>Fotocamera non disponibile</b>" + causa + '<span class="tecnico"></span>';
+    msg.querySelector(".tecnico").textContent = nome + ": " + testo;
     msg.style.display = "";
     $("btn-camera").textContent = "Riprova ad accendere";
   }
 
   function accendi() {
     var video = $("video");
+    if (avvio) return; /* un secondo tocco mentre si sta accendendo non deve aprirne un'altra */
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { errore(null); return; }
+    avvio = true;
     var chiesto = {
       video: {
         facingMode: { ideal: "environment" },
@@ -1163,9 +1265,11 @@
       video.srcObject = s;
       return video.play();
     }).then(function () {
+      avvio = false;
       camera.className = "camera on";
       msg.style.display = "none";
       acceso = true;
+      letture = 0;
       $("btn-camera").textContent = "Spegni la fotocamera";
 
       var traccia = stream.getVideoTracks()[0];
@@ -1180,9 +1284,9 @@
         if (avanzate.length) { traccia.applyConstraints({ advanced: avanzate }); }
       } catch (e) {}
 
-      if ("BarcodeDetector" in window) {
+      var det = lettoreDelBrowser();
+      if (det) {
         motore = "lettore di Chrome";
-        var det = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] });
         var giro = function () {
           if (!acceso) return;
           det.detect(video).then(function (out) {
@@ -1212,7 +1316,7 @@
 
       nota("Fotocamera accesa · " + qualita + " · " + motore + ". Avvicina il codice fino a riempire il riquadro.");
       setTimeout(function () {
-        if (acceso && !ultimo.cod) {
+        if (acceso && letture === 0) {
           nota("Non ho ancora letto niente. Avvicina il codice a 10-15 cm, tienilo dritto e ben illuminato. " +
             "Su un PC spesso non basta: dal telefono va molto meglio. Nel frattempo puoi scriverlo a mano.", true);
         }
@@ -1224,6 +1328,11 @@
     if (acceso) { spegni(); nota(""); } else { accendi(); }
   };
 
+  /* se cambi app o blocchi lo schermo, la fotocamera non resta accesa di nascosto */
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden && acceso) { spegni(); }
+  });
+
   /* ---------- codice letto da una fotografia ---------- */
 
   $("btn-foto").onclick = function () { $("file-foto").click(); };
@@ -1233,14 +1342,15 @@
     this.value = "";
     if (!f) return;
     nota("Leggo la foto…");
+    var nessuno = "In questa foto non trovo nessun codice a barre. Riprova più da vicino, con il codice dritto e a fuoco.";
     var img = new Image();
     img.onload = function () {
       URL.revokeObjectURL(img.src);
-      if ("BarcodeDetector" in window) {
-        var det = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] });
+      var det = lettoreDelBrowser();
+      if (det) {
         det.detect(img).then(function (out) {
           if (out && out.length) { ultimo = { cod: "", t: 0 }; letto(out[0].rawValue); }
-          else { nota("In questa foto non trovo nessun codice a barre. Riprova più da vicino, con il codice dritto e a fuoco.", true); }
+          else { nota(nessuno, true); }
         }).catch(function () {
           nota("Non riesco a leggere questa immagine.", true);
         });
@@ -1249,9 +1359,7 @@
         lettore.decodeFromImageElement(img).then(function (res) {
           ultimo = { cod: "", t: 0 };
           letto(res.getText());
-        }).catch(function () {
-          nota("In questa foto non trovo nessun codice a barre. Riprova più da vicino, con il codice dritto e a fuoco.", true);
-        });
+        }).catch(function () { nota(nessuno, true); });
       } else {
         nota("La libreria che legge i codici non si è caricata: controlla la connessione.", true);
       }
@@ -1260,9 +1368,20 @@
     img.src = URL.createObjectURL(f);
   };
 
+  /* ---------- codice scritto a mano ---------- */
+
+  var dubbio = "";
+
   $("btn-codice").onclick = function () {
     var v = $("codice").value.replace(/\D/g, "");
     if (v.length < 8) { nota("Un codice a barre ha almeno 8 cifre.", true); return; }
+    if (!codiceValido(v) && v !== dubbio) {
+      dubbio = v;
+      nota("Questo codice non torna: di solito ha 8 o 13 cifre e l'ultima è di controllo. Ricontrolla le cifre; " +
+        "se è scritto proprio così, tocca di nuovo Aggiungi.", true);
+      return;
+    }
+    dubbio = "";
     aggiungi(v, "", 1, "pz");
     $("codice").value = "";
   };
@@ -1292,22 +1411,33 @@
     return '"' + s.replace(/"/g, '""') + '"';
   }
 
+  function notaCsv(it, t) {
+    var voci = [];
+    if (it.stato === "ignoto") { voci.push("codice non trovato in catalogo"); }
+    if (it.stato === "rete" || it.stato === "cerco") { voci.push("catalogo non raggiunto: nome e valori da completare"); }
+    if (!t.certo) {
+      voci.push(!(it.confQta > 0) && (it.confUnita || "pz") !== "pz"
+        ? "formato non dichiarato: totale da calcolare"
+        : "residuo in un'unità diversa dal formato: totale da calcolare");
+    }
+    return voci.join("; ");
+  }
+
   $("btn-csv").onclick = function () {
     if (items.size === 0) { nota("Non c'è ancora niente da scaricare.", true); return; }
-    var oggi = new Date().toISOString().slice(0, 10);
+    var oggi = oggiLocale();
     var righe = [COLONNE.join(";")];
     ordinati().forEach(function (it) {
       var t = totale(it);
       righe.push([
         campo(it.barcode), campo(it.prodotto), campo(it.marca), campo(""), campo(it.dove),
-        campo(it.confQta || ""), campo(it.confUnita || ""), campo(it.chiuse),
+        campo(it.confQta || ""), campo(it.confUnita || ""), campo(numero(it.chiuse, 0)),
         campo(it.aperta ? "SI" : "NO"),
         campo(it.aperta ? numero(it.residua, 0) : ""), campo(it.aperta ? (it.resUnita || "") : ""),
         campo(t.certo ? t.qta : ""), campo(t.certo ? t.unita : ""),
         campo(it.scadenza), campo(it.kcal), campo(it.proteine),
         campo(it.carboidrati), campo(it.grassi), campo(oggi),
-        campo(it.stato === "ignoto" ? "codice non trovato in catalogo"
-          : (!t.certo ? "formato non dichiarato: totale da calcolare" : ""))
+        campo(notaCsv(it, t))
       ].join(";"));
     });
     var blob = new Blob(["﻿" + righe.join("\r\n")], { type: "text/csv;charset=utf-8" });
@@ -1351,37 +1481,53 @@
         var righe = leggiCsv(String(lettore.result));
         if (!righe.length) { nota("Il file è vuoto.", true); return; }
         var testa = righe[0].map(function (c) { return c.trim().toUpperCase(); });
+        /* dev'essere un file uscito da questa pagina: altrimenti caricherei numeri sbagliati */
+        var mancano = ["PRODOTTO", "DOVE", "CONFEZIONI", "FORMATO_UNITA"].filter(function (n) { return testa.indexOf(n) < 0; });
+        if (mancano.length) {
+          nota("Questo non è un file scaricato da qui con «Scarica il file per Claude»: mancano le colonne " +
+            mancano.join(", ") + ". Non ho cambiato niente.", true);
+          return;
+        }
         var col = function (r, nome) {
           var i = testa.indexOf(nome);
           return i >= 0 ? (r[i] || "").trim() : "";
         };
-        var quanti = 0;
+        var nuovi = [], spostati = 0;
         righe.slice(1).forEach(function (r) {
           if (!r.length || r.join("").trim() === "") return;
-          var barcode = col(r, "BARCODE");
+          var barcode = col(r, "BARCODE").replace(/\D/g, "");
           var prodotto = col(r, "PRODOTTO");
-          var luogo = (col(r, "DOVE") || "DISPENSA").toUpperCase();
-          var chiave = barcode || prodotto.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+          var luogo = col(r, "DOVE").toUpperCase();
+          if (LUOGHI.indexOf(luogo) < 0) { luogo = "DISPENSA"; spostati++; }
+          var chiave = barcode || chiaveDa(prodotto);
           if (!chiave) return;
-          var id = luogo + "_" + chiave;
-          items.set(id, {
-            id: id, barcode: barcode, prodotto: prodotto, marca: col(r, "MARCA"),
+          var confUnita = unitaBuona(col(r, "FORMATO_UNITA"), "pz");
+          nuovi.push({
+            id: luogo + "_" + chiave, barcode: barcode, prodotto: prodotto, marca: col(r, "MARCA"),
             formato: "", dove: luogo,
-            confQta: numero(col(r, "FORMATO_QTA"), 0),
-            confUnita: col(r, "FORMATO_UNITA") || "pz",
-            chiuse: numero(col(r, "CONFEZIONI"), 0),
+            confQta: Math.max(0, numero(col(r, "FORMATO_QTA"), 0)),
+            confUnita: confUnita,
+            chiuse: Math.max(0, numero(col(r, "CONFEZIONI"), 0)),
             aperta: col(r, "APERTA").toUpperCase() === "SI",
-            residua: numero(col(r, "RESIDUA"), 0),
-            resUnita: col(r, "RESIDUA_UNITA") || col(r, "FORMATO_UNITA") || "pz",
-            scadenza: col(r, "SCADENZA"),
+            residua: Math.max(0, numero(col(r, "RESIDUA"), 0)),
+            resUnita: unitaBuona(col(r, "RESIDUA_UNITA"), confUnita),
+            scadenza: /^\d{4}-\d{2}-\d{2}$/.test(col(r, "SCADENZA")) ? col(r, "SCADENZA") : "",
             kcal: col(r, "KCAL_100G"), proteine: col(r, "PROTEINE_100G"),
             carboidrati: col(r, "CARBOIDRATI_100G"), grassi: col(r, "GRASSI_100G"),
-            stato: "ok", ts: Date.now() - (quanti * 10)
+            /* un codice rimasto senza nome lo ricerco di nuovo nel catalogo */
+            stato: barcode ? (prodotto ? "ok" : "rete") : "manuale",
+            ts: Date.now() - (nuovi.length * 10)
           });
-          quanti++;
         });
+        if (!nuovi.length) { nota("In questo file non c'è nessun prodotto. Non ho cambiato niente.", true); return; }
+        if (items.size > 0 && !confirm("Sostituisco la lista di adesso (prodotti: " + items.size + ") con quella del file (prodotti: " +
+            nuovi.length + ")? Quelli di adesso vengono cancellati.")) { return; }
+        items.clear();
+        nuovi.forEach(function (it) { items.set(it.id, it); });
         salva();
-        nota("Ripreso l'inventario: " + quanti + " prodotti caricati dal file.");
+        nota("Ripreso l'inventario: " + items.size + (items.size === 1 ? " prodotto caricato" : " prodotti caricati") + " dal file." +
+          (spostati ? " " + spostati + " con un luogo che non conosco: messi in dispensa." : ""), spostati > 0);
+        riprova();
       } catch (e) {
         nota("Non riesco a leggere questo file: dev'essere un CSV scaricato da qui.", true);
       }
@@ -1404,6 +1550,7 @@
   caricaRubrica();
   carica();
   render();
+  riprova();
 })();
 </script>
 </body>
