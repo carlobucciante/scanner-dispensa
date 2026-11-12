@@ -258,8 +258,23 @@
   .interruttore:active { opacity: 1; }
   @media (prefers-reduced-motion: reduce) { .interruttore, .interruttore::after, .riga { transition: none; } }
 
-  .comando.via { justify-content: center; }
+  .comando.via { justify-content: space-around; }
   .comando.via button { color: var(--rosso); font-size: 16px; min-height: 34px; padding: 0 12px; }
+  .comando.via button.calmo { color: var(--blu); }
+  .comando.via button.forte { color: var(--blu); font-weight: 600; }
+
+  /* in uscita il mirino cambia colore: si vede subito in che modalità sei */
+  .camera[data-modo="USCITA"] .mirino { border-color: #FF9F0A; }
+
+  /* schede dei prodotti arrivati dallo scontrino */
+  .comando .testo { font-size: 15px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .comando button.mini {
+    height: 34px; padding: 0 12px; border-radius: 8px;
+    background: var(--blu-velo); color: var(--blu); font-size: 15px; font-weight: 600;
+  }
+  .comando button.mini[aria-pressed="true"] { background: var(--blu); color: #FFFFFF; }
+  .etichette .dubbio { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; color: var(--arancio); background: var(--arancio-velo); }
+  .etichette .gelo { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; color: var(--blu); background: var(--blu-velo); }
 
   .vuoto { background: var(--card); border-radius: var(--raggio); padding: 18px 16px; }
   .vuoto p { margin: 0 0 10px; color: var(--ink-2); font-size: 15px; }
@@ -287,6 +302,12 @@
   <section>
     <p class="label">Dove stai guardando</p>
     <div class="segmenti" id="chips"></div>
+  </section>
+
+  <section>
+    <p class="label">Cosa stai facendo</p>
+    <div class="segmenti" id="modo"></div>
+    <p class="nota" id="modo-nota" style="margin-top: 7px"></p>
   </section>
 
   <section>
@@ -327,6 +348,11 @@
     </div>
   </section>
 
+  <section id="sez-pendenti" style="display: none">
+    <p class="label" id="pend-titolo">Dallo scontrino</p>
+    <div id="pendenti"></div>
+  </section>
+
   <section>
     <p class="label">In casa</p>
     <div class="chips" id="filtri"></div>
@@ -338,9 +364,11 @@
   <section class="fine">
     <button class="primary" id="btn-csv">Scarica il file per Claude</button>
     <div class="elenco">
+      <button id="btn-collega">Collega al foglio</button>
       <button id="btn-import">Riparti da un file</button>
       <button id="btn-svuota" class="pericolo">Svuota tutto</button>
     </div>
+    <p class="nota" id="stato-foglio" role="status"></p>
     <input type="file" id="file-import" accept=".csv,text/csv">
   </section>
 </div>
@@ -361,6 +389,22 @@
   var avvio = false;     /* la fotocamera si sta accendendo */
   var letture = 0;
   var motore = "";
+
+  /* Collegamento al foglio Google, attraverso il workflow n8n WF_INVENTARIO_APP. */
+  var API = "https://carlo-bucciante.app.n8n.cloud/webhook/inventario-app-9q4t2";
+  var chiave = "";                                   /* parola d'ordine, resta solo su questo telefono */
+  var coda = { completati: [], ignorati: [], movimenti: [] };  /* cose da dire al foglio, in attesa di rete */
+  var lapidi = [];                                   /* prodotti tolti dalla lista: {id, ts} */
+  var pendenti = [];                                 /* righe dello scontrino ancora da completare */
+  var inAttesa = "";                                 /* riga dello scontrino che aspetta il suo codice a barre */
+  var modo = "ENTRATA";
+  var inSync = false, timerSync = null, daRisincronizzare = false;
+
+  function leggiMemoria(nome, difetto) {
+    try { var v = JSON.parse(localStorage.getItem(nome) || "null"); return v === null ? difetto : v; } catch (e) { return difetto; }
+  }
+  function scriviMemoria(nome, v) { try { localStorage.setItem(nome, JSON.stringify(v)); } catch (e) {} }
+  function salvaCoda() { scriviMemoria("coda", coda); scriviMemoria("lapidi", lapidi); scriviMemoria("pendenti", pendenti); }
 
   /* Cosa mostra la lista: un solo luogo oppure tutto, e in che ordine. */
   var SOGLIA = 3; /* giorni entro cui un prodotto è "in scadenza" */
@@ -477,11 +521,12 @@
     } catch (e) {}
   }
 
-  function salva() {
+  function salva(senzaInvio) {
     var riuscito = true;
     try { localStorage.setItem("dispensa", JSON.stringify(Array.from(items.values()))); }
     catch (e) { riuscito = false; }
     render();
+    if (!senzaInvio) { programmaSync(); }
     if (!riuscito) {
       nota("Attenzione: il telefono non mi lascia salvare la lista. Scarica subito il file, altrimenti chiudendo la pagina la perdi.", true);
     }
@@ -668,7 +713,9 @@
     if (sospeso) { render(); }
   }
 
-  contenuto.addEventListener("pointerdown", function () { premendo = true; clearTimeout(timerPremi); }, true);
+  [contenuto, $("pendenti")].forEach(function (zona) {
+    zona.addEventListener("pointerdown", function () { premendo = true; clearTimeout(timerPremi); }, true);
+  });
   ["pointerup", "pointercancel"].forEach(function (tipo) {
     document.addEventListener(tipo, function () {
       if (premendo) { clearTimeout(timerPremi); timerPremi = setTimeout(rilascia, 400); }
@@ -684,6 +731,7 @@
   function render() {
     if (editing || premendo) { sospeso = true; return; }
     sospeso = false;
+    renderPendenti();
     var lista = ordinati();
     filtri(lista);
     $("allerta").textContent = "";
@@ -811,6 +859,12 @@
       allarme.className = "avviso";
       allarme.textContent = avviso(gg);
       etichette.appendChild(allarme);
+    }
+    if (it.congelatoIl) {
+      var gelo = document.createElement("span");
+      gelo.className = "gelo";
+      gelo.textContent = "Congelato il " + dataBreve(it.congelatoIl);
+      etichette.appendChild(gelo);
     }
     sx.appendChild(etichette);
 
@@ -984,7 +1038,7 @@
     }
 
     /* scadenza */
-    var sc = comando("Scade il");
+    var sc = comando("Scade il", it.scadenzaStimata && it.scadenza ? "data stimata: controlla la confezione" : "");
     sc.firstChild.id = "l-" + it.id;
     var data = document.createElement("input");
     data.type = "date";
@@ -992,7 +1046,7 @@
     data.value = it.scadenza || "";
     data.onfocus = function () { editing = true; };
     data.onblur = finito;
-    data.onchange = function () { it.scadenza = data.value; editing = false; salva(); };
+    data.onchange = function () { it.scadenza = data.value; it.scadenzaStimata = false; it.ts = Date.now(); editing = false; salva(); };
     sc.appendChild(data);
     r.appendChild(sc);
 
@@ -1008,31 +1062,32 @@
       if (l === it.dove) { o.selected = true; }
       luogo.appendChild(o);
     });
-    luogo.onchange = function () {
-      var suffisso = it.id.slice(it.dove.length + 1);
-      var nuovoId = luogo.value + "_" + suffisso;
-      if (items.has(nuovoId)) {
-        var pieno = nomeLuogo(luogo.value).toLowerCase();
-        luogo.value = it.dove;
-        nota("In " + pieno + " c'è già lo stesso prodotto: uniscili a mano, o togli una delle due righe.", true);
-        return;
-      }
-      items.delete(it.id);
-      it.id = nuovoId;
-      it.dove = luogo.value;
-      it.ts = Date.now();
-      items.set(nuovoId, it);
-      salva();
-    };
+    luogo.onchange = function () { sposta(it, luogo.value, luogo); };
     dv.appendChild(luogo);
     r.appendChild(dv);
 
     var fondo = document.createElement("div");
     fondo.className = "comando via";
+    if (t.qta > 0) {
+      var basta = document.createElement("button");
+      basta.type = "button";
+      basta.className = "calmo";
+      basta.textContent = "È finito";
+      basta.onclick = function () {
+        movimento("USCITA", it, t.certo ? t.qta : numero(it.chiuse, 0), t.certo ? t.unita : "conf", "APP", "segnato come finito");
+        it.chiuse = 0;
+        it.aperta = false;
+        it.residua = 0;
+        it.ts = Date.now();
+        salva();
+        nota((it.prodotto || "Il prodotto") + " segnato come finito.");
+      };
+      fondo.appendChild(basta);
+    }
     var via = document.createElement("button");
     via.type = "button";
     via.textContent = "Togli dalla lista";
-    via.onclick = function () { items.delete(it.id); salva(); };
+    via.onclick = function () { togli(it); salva(); };
     fondo.appendChild(via);
     r.appendChild(fondo);
 
@@ -1091,6 +1146,7 @@
         it.carboidrati = n.carbohydrates_100g;
         it.grassi = n.fat_100g;
         it.stato = "ok";
+        it.ts = Date.now();
         salva();
       })
       .catch(function () {
@@ -1142,27 +1198,37 @@
   }
 
   function aggiungi(barcode, nomeManuale, qta, unita) {
-    var chiave = barcode || chiaveDa(nomeManuale);
-    var id = dove + "_" + (chiave || ("S" + Date.now()));
-    var esiste = items.get(id);
+    var chiaveProdotto = barcode || chiaveDa(nomeManuale);
+    var quantoSfuso = Math.max(0, numero(qta, 1));
+    var unitaSfusa = unita || "pz";
     /* se la lista mostra un altro luogo, la riapro: il prodotto appena letto deve vedersi */
     if (vista !== "TUTTO" && vista !== dove) { vista = "TUTTO"; ricordaVista(); }
 
+    if (modo === "USCITA") { esci(chiaveProdotto, barcode, nomeManuale, quantoSfuso, unitaSfusa); return; }
+
+    var id = dove + "_" + (chiaveProdotto || ("S" + Date.now()));
+    var esiste = items.get(id);
+
     if (esiste) {
-      /* già in inventario: non conto due volte, ti porto sulla sua riga */
-      evidenzia(id);
+      /* già in casa e sono in Entrata: ne è arrivato dell'altro */
+      if (barcode) {
+        esiste.chiuse = pulito(numero(esiste.chiuse, 0) + 1);
+        movimento("ENTRATA", esiste, esiste.confQta > 0 ? esiste.confQta : 1, esiste.confQta > 0 ? esiste.confUnita : "conf");
+      } else {
+        sommaSfuso(esiste, quantoSfuso, unitaSfusa);
+        movimento("ENTRATA", esiste, quantoSfuso, unitaSfusa);
+      }
       esiste.ts = Date.now();
+      evidenzia(id);
       salva();
-      nota((esiste.prodotto || chiave) + " è già in lista: correggi lì quanto ne resta.");
+      nota((esiste.prodotto || chiaveProdotto) + ": aggiunto. Ora in casa: " + totaleScritto(esiste) + ".");
       /* se la prima volta il catalogo non aveva risposto, ci riprovo adesso */
       if (esiste.barcode && esiste.stato !== "ok" && esiste.stato !== "manuale") { cerca(esiste); }
-      beep(true);
+      beep(false);
       lampeggia();
       return;
     }
 
-    var quantoSfuso = Math.max(0, numero(qta, 1));
-    var unitaSfusa = unita || "pz";
     var it = {
       id: id, barcode: barcode || "", prodotto: nomeManuale || "", marca: "", formato: "",
       dove: dove,
@@ -1185,6 +1251,7 @@
     }
     items.set(id, it);
     evidenzia(id);
+    movimento("ENTRATA", it, barcode ? (it.confQta > 0 ? it.confQta : 1) : quantoSfuso, barcode ? (it.confQta > 0 ? it.confUnita : "conf") : unitaSfusa);
     salva();
     if (barcode) { cerca(it); }
     else { nota("Aggiunto " + totaleScritto(it) + " di " + nomeManuale + " in " + dove.toLowerCase() + "."); }
@@ -1207,6 +1274,25 @@
     if (cod === ultimo.cod && ora - ultimo.t < 3000) return;
     ultimo = { cod: cod, t: ora };
     letture++;
+    ricevi(cod);
+  }
+
+  /* Un codice letto o scritto a mano: può servire a una riga dello scontrino, oppure è un'entrata/uscita. */
+  function ricevi(cod) {
+    var aspetta = inAttesa ? pendenti.filter(function (p) { return p.idRiga === inAttesa; })[0] : null;
+    if (aspetta) { assegnaCodice(aspetta, cod); beep(false); lampeggia(); return; }
+    if (modo === "ENTRATA") {
+      /* se questo prodotto è tra quelli dello scontrino, lo completi lì: altrimenti lo conterei due volte */
+      var noto = pendenti.filter(function (p) { return bozza(p).barcode === cod; })[0];
+      if (noto) {
+        var scheda = document.getElementById("p-" + noto.idRiga);
+        if (scheda && scheda.scrollIntoView) { scheda.scrollIntoView({ block: "center", behavior: "smooth" }); }
+        nota("Questo prodotto è nello scontrino da completare: conferma quantità e scadenza nella sua scheda e tocca Registra.");
+        beep(true);
+        lampeggia();
+        return;
+      }
+    }
     aggiungi(cod, "", 1, "pz");
   }
 
@@ -1382,7 +1468,7 @@
       return;
     }
     dubbio = "";
-    aggiungi(v, "", 1, "pz");
+    ricevi(v);
     $("codice").value = "";
   };
   $("codice").onkeydown = function (e) { if (e.key === "Enter") $("btn-codice").click(); };
@@ -1522,8 +1608,12 @@
         if (!nuovi.length) { nota("In questo file non c'è nessun prodotto. Non ho cambiato niente.", true); return; }
         if (items.size > 0 && !confirm("Sostituisco la lista di adesso (prodotti: " + items.size + ") con quella del file (prodotti: " +
             nuovi.length + ")? Quelli di adesso vengono cancellati.")) { return; }
+        var tenuti = {};
+        nuovi.forEach(function (it) { tenuti[it.id] = true; });
+        items.forEach(function (it, id) { if (!tenuti[id]) { lapidi.push({ id: id, ts: Date.now() }); } });
         items.clear();
         nuovi.forEach(function (it) { items.set(it.id, it); });
+        salvaCoda();
         salva();
         nota("Ripreso l'inventario: " + items.size + (items.size === 1 ? " prodotto caricato" : " prodotti caricati") + " dal file." +
           (spostati ? " " + spostati + " con un luogo che non conosco: messi in dispensa." : ""), spostati > 0);
@@ -1538,19 +1628,672 @@
 
   $("btn-svuota").onclick = function () {
     if (items.size === 0) return;
-    if (!confirm("Cancello tutti i " + items.size + " prodotti? Scarica prima il file, altrimenti li perdi.")) return;
+    if (!confirm("Cancello tutti i " + items.size + " prodotti" + (chiave ? ", anche dal foglio" : "") + "? Scarica prima il file, altrimenti li perdi.")) return;
+    items.forEach(function (it, id) { lapidi.push({ id: id, ts: Date.now() }); });
     items.clear();
+    salvaCoda();
     salva();
     nota("Lista svuotata.");
   };
 
+  /* ---------- date ---------- */
+
+  function isoLocale(d) {
+    var due = function (n) { return (n < 10 ? "0" : "") + n; };
+    return d.getFullYear() + "-" + due(d.getMonth() + 1) + "-" + due(d.getDate());
+  }
+  function daIso(s) {
+    var p = String(s || "").split("-");
+    return p.length === 3 ? new Date(+p[0], p[1] - 1, +p[2]) : null;
+  }
+  /* La data che cade `giorni` dopo `partenza` (o dopo oggi). */
+  function giornoDa(partenza, giorni) {
+    var d = daIso(partenza) || new Date();
+    d.setDate(d.getDate() + Math.round(giorni));
+    return isoLocale(d);
+  }
+  function giorniTra(da, a) {
+    var x = daIso(da), y = daIso(a);
+    return (x && y) ? Math.round((y - x) / 86400000) : "";
+  }
+  function dataBreve(s) {
+    var p = String(s || "").split("-");
+    return p.length === 3 ? p[2] + "/" + p[1] : String(s || "");
+  }
+  /* Tra due scadenze tiene la più vicina: è quella che conta per l'avviso. */
+  function primaScadenza(a, b) {
+    if (!a) return b || "";
+    if (!b) return a;
+    return a < b ? a : b;
+  }
+  function oraAdesso() {
+    var d = new Date(), due = function (n) { return (n < 10 ? "0" : "") + n; };
+    return due(d.getHours()) + ":" + due(d.getMinutes());
+  }
+
+  /* ---------- entrate, uscite, spostamenti ---------- */
+
+  function modi() {
+    var box = $("modo");
+    box.innerHTML = "";
+    [["ENTRATA", "Entrata"], ["USCITA", "Uscita"]].forEach(function (m) {
+      var b = document.createElement("button");
+      b.className = "seg";
+      b.type = "button";
+      b.textContent = m[1];
+      b.setAttribute("aria-pressed", String(m[0] === modo));
+      b.onclick = function () { modo = m[0]; scriviMemoria("modo", modo); modi(); };
+      box.appendChild(b);
+    });
+    camera.setAttribute("data-modo", modo);
+    $("modo-nota").textContent = modo === "USCITA"
+      ? "Passa il codice di ciò che è finito: tolgo una confezione."
+      : "Passa il codice di ciò che entra in casa: aggiungo una confezione.";
+    $("btn-codice").textContent = modo === "USCITA" ? "Togli" : "Aggiungi";
+    $("btn-sfuso").textContent = modo === "USCITA" ? "Togli" : "Aggiungi";
+  }
+
+  /* Annota un movimento per lo storico del foglio. */
+  function movimento(tipo, it, quantita, unita, origine, testo) {
+    coda.movimenti.push({
+      quando: oggiLocale() + " " + oraAdesso(), tipo: tipo, barcode: it.barcode || "", prodotto: it.prodotto || "",
+      dove: it.dove, quantita: pulito(numero(quantita, 0)), unita: unita || "", origine: origine || "APP", nota: testo || ""
+    });
+    salvaCoda();
+  }
+
+  function togli(it) {
+    items.delete(it.id);
+    lapidi.push({ id: it.id, ts: Date.now() });
+    salvaCoda();
+  }
+
+  function nuovoProdotto(id, barcode, prodotto, luogo) {
+    return {
+      id: id, barcode: barcode || "", prodotto: prodotto || "", marca: "", formato: "", dove: luogo,
+      confQta: 0, confUnita: "pz", chiuse: 0, aperta: false, residua: 0, resUnita: "pz",
+      scadenza: "", kcal: "", proteine: "", carboidrati: "", grassi: "", stato: barcode ? "ok" : "manuale", ts: Date.now()
+    };
+  }
+
+  /* Aggiunge una quantità a un prodotto sfuso: a pezzi tra gli interi, a peso nel residuo. */
+  function sommaSfuso(it, q, u) {
+    if (u === "pz" && famiglia(it.confUnita || "pz") === "pezzi") {
+      it.chiuse = pulito(numero(it.chiuse, 0) + q);
+      return;
+    }
+    var conv = it.aperta ? converti(q, u, it.resUnita || u) : null;
+    if (it.aperta && conv !== null) { it.residua = pulito(numero(it.residua, 0) + conv); }
+    else { it.aperta = true; it.residua = q; it.resUnita = u; if (!(numero(it.chiuse, 0) > 0)) { it.confUnita = u; } }
+  }
+
+  /* Uscita: tolgo una confezione (prima quella aperta), o la quantità scritta per uno sfuso. */
+  function esci(chiaveProdotto, barcode, nome, q, u) {
+    var candidati = [];
+    items.forEach(function (it) {
+      if (it.id.slice(it.dove.length + 1) === chiaveProdotto && totale(it).qta > 0) { candidati.push(it); }
+    });
+    candidati.sort(function (a, b) { return (b.dove === dove ? 1 : 0) - (a.dove === dove ? 1 : 0); });
+    var it = candidati[0];
+    if (!it) {
+      nota((nome || "Il codice " + barcode) + " non risulta in casa: niente da togliere. Se è una cosa nuova, passa su Entrata.", true);
+      beep(true);
+      lampeggia();
+      return;
+    }
+    var tolto, unitaTolta;
+    if (barcode) {
+      if (it.aperta) {
+        tolto = numero(it.residua, 0); unitaTolta = it.resUnita || "";
+        it.aperta = false; it.residua = 0;
+      } else {
+        tolto = it.confQta > 0 ? it.confQta : 1; unitaTolta = it.confQta > 0 ? it.confUnita : "conf";
+        it.chiuse = pulito(Math.max(0, numero(it.chiuse, 0) - 1));
+      }
+    } else if (u === "pz" && famiglia(it.confUnita || "pz") === "pezzi") {
+      tolto = Math.min(q, numero(it.chiuse, 0)); unitaTolta = "pz";
+      it.chiuse = pulito(Math.max(0, numero(it.chiuse, 0) - q));
+    } else {
+      var conv = it.aperta ? converti(q, u, it.resUnita || u) : null;
+      if (conv === null) {
+        nota(it.prodotto + " è contato in un'altra unità: correggi la quantità sulla sua riga.", true);
+        beep(true);
+        return;
+      }
+      tolto = q; unitaTolta = u;
+      it.residua = pulito(Math.max(0, numero(it.residua, 0) - conv));
+    }
+    it.ts = Date.now();
+    movimento("USCITA", it, tolto, unitaTolta);
+    evidenzia(it.id);
+    salva();
+    var resta = totale(it).qta > 0 ? "Restano: " + totaleScritto(it) + "." : "Era l'ultimo: è finito.";
+    nota((it.prodotto || chiaveProdotto) + " tolto da " + nomeLuogo(it.dove).toLowerCase() + ". " + resta);
+    beep(false);
+    if (navigator.vibrate) { try { navigator.vibrate(45); } catch (e) {} }
+    lampeggia();
+  }
+
+  /* Sposta un prodotto da un luogo all'altro: tutto, o solo alcune confezioni.
+     Verso il freezer la scadenza diventa indicativa (3 mesi); uscendone, 2 giorni. */
+  function sposta(it, nuovo, tendina) {
+    var vecchio = it.dove;
+    if (nuovo === vecchio) return;
+    var chiuse = numero(it.chiuse, 0), quante = chiuse, tutto = true;
+    if (chiuse > 1 || (chiuse >= 1 && it.aperta)) {
+      var risposta = prompt("Quante confezioni chiuse sposti in " + nomeLuogo(nuovo).toLowerCase() + "? Ne hai " + scritto(chiuse) + "." +
+        (it.aperta ? " Se le sposti tutte, porto di là anche quella aperta." : ""), scritto(chiuse));
+      if (risposta === null) { tendina.value = vecchio; return; }
+      quante = Math.min(chiuse, Math.max(0, numero(risposta, chiuse)));
+      if (!(quante > 0)) { tendina.value = vecchio; return; }
+      tutto = quante >= chiuse;
+    }
+    var ora = Date.now();
+    var nuovoId = nuovo + "_" + it.id.slice(vecchio.length + 1);
+    var arrivo = items.get(nuovoId), cera = !!arrivo;
+    if (!arrivo) {
+      arrivo = JSON.parse(JSON.stringify(it));
+      arrivo.id = nuovoId; arrivo.dove = nuovo; arrivo.chiuse = 0; arrivo.aperta = false; arrivo.residua = 0;
+      items.set(nuovoId, arrivo);
+    }
+    arrivo.chiuse = pulito(numero(arrivo.chiuse, 0) + quante);
+    var spostato = totale(it);
+    if (tutto) {
+      if (it.aperta) {
+        var r2 = arrivo.aperta ? converti(numero(it.residua, 0), it.resUnita, arrivo.resUnita || it.resUnita) : null;
+        if (arrivo.aperta && r2 !== null) { arrivo.residua = pulito(numero(arrivo.residua, 0) + r2); }
+        else if (!arrivo.aperta) { arrivo.aperta = true; arrivo.residua = it.residua; arrivo.resUnita = it.resUnita; }
+      }
+      togli(it);
+    } else {
+      it.chiuse = pulito(chiuse - quante);
+      it.ts = ora;
+    }
+    var coda2 = "";
+    if (nuovo === "FREEZER") {
+      arrivo.scadenza = cera ? primaScadenza(arrivo.scadenza, giornoDa("", 90)) : giornoDa("", 90);
+      arrivo.scadenzaStimata = true;
+      arrivo.congelatoIl = oggiLocale();
+      coda2 = " Ho messo una scadenza indicativa a 3 mesi: correggila se serve.";
+    } else if (vecchio === "FREEZER") {
+      arrivo.scadenza = giornoDa("", 2);
+      arrivo.scadenzaStimata = true;
+      arrivo.congelatoIl = "";
+      coda2 = " Scongelato: ho messo la scadenza tra 2 giorni, va consumato presto.";
+    } else if (cera) {
+      arrivo.scadenza = primaScadenza(arrivo.scadenza, it.scadenza);
+    }
+    arrivo.ts = ora;
+    movimento("SPOSTAMENTO", arrivo, tutto && spostato.certo ? spostato.qta : quante, tutto && spostato.certo ? spostato.unita : "conf", "APP", "da " + vecchio);
+    evidenzia(nuovoId);
+    salva();
+    nota((arrivo.prodotto || "Prodotto") + " spostato in " + nomeLuogo(nuovo).toLowerCase() + "." + coda2);
+  }
+
+  /* ---------- righe dello scontrino da completare ---------- */
+
+  /* Interroga il catalogo per un codice: null se non c'è, altrimenti nome, marca, formato e valori. */
+  function catalogo(barcode) {
+    var url = "https://world.openfoodfacts.org/api/v2/product/" + encodeURIComponent(barcode) +
+      "?fields=product_name,product_name_it,brands,quantity,product_quantity,product_quantity_unit,nutriments";
+    return fetch(url, { headers: { "Accept": "application/json" } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || d.status === undefined) { throw new Error("risposta non valida"); }
+        if (d.status !== 1 || !d.product) return null;
+        var p = d.product, n = p.nutriments || {}, info = {
+          prodotto: (p.product_name_it || p.product_name || "").trim(), marca: (p.brands || "").split(",")[0].trim(),
+          formato: (p.quantity || "").trim(), confQta: 0, confUnita: "",
+          kcal: n["energy-kcal_100g"], proteine: n.proteins_100g, carboidrati: n.carbohydrates_100g, grassi: n.fat_100g
+        };
+        var qta = parseFloat(p.product_quantity), um = String(p.product_quantity_unit || "").toLowerCase();
+        if (isFinite(qta) && qta > 0 && (PESO[um] || VOLUME[um])) { info.confQta = qta; info.confUnita = um; }
+        else { var f = leggiFormato(info.formato); if (f) { info.confQta = f.qta; info.confUnita = f.unita; } }
+        return info;
+      });
+  }
+
+  /* La bozza di completamento di una riga: parte da ciò che il foglio ricorda di quel prodotto. */
+  function bozza(p) {
+    if (!p.mio) {
+      var aPeso = numero(p.pesoKg, 0) > 0;
+      var sfuso = p.tipo === "SFUSO" || (!p.barcode && aPeso);
+      p.mio = {
+        tipo: sfuso ? "SFUSO" : (p.barcode ? "CODICE" : ""),
+        barcode: p.barcode || "", prodotto: p.prodotto || "", marca: p.marca || "",
+        formatoQta: numero(p.formatoQta, 0), formatoUnita: (!sfuso && p.formatoUnita) || "g",
+        quantita: aPeso ? numero(p.pesoKg, 0) : (numero(p.quantita, 1) || 1),
+        unita: aPeso ? "kg" : (sfuso ? unitaBuona(p.formatoUnita, "pz") : "conf"),
+        dove: LUOGHI.indexOf(p.dove) >= 0 ? p.dove : "",
+        scadenza: numero(p.durataGiorni, 0) > 0 ? giornoDa(p.dataAcquisto, numero(p.durataGiorni, 0)) : "",
+        stimata: numero(p.durataGiorni, 0) > 0
+      };
+    }
+    return p.mio;
+  }
+
+  function assegnaCodice(p, cod) {
+    var m = bozza(p);
+    m.barcode = cod;
+    m.tipo = "CODICE";
+    inAttesa = "";
+    /* se ce l'ho già in casa, so già come si chiama e quanto contiene */
+    var gemello = null;
+    items.forEach(function (it) { if (it.barcode === cod && !gemello) { gemello = it; } });
+    if (gemello) {
+      m.prodotto = m.prodotto || gemello.prodotto; m.marca = m.marca || gemello.marca;
+      if (gemello.confQta > 0) { m.formatoQta = gemello.confQta; m.formatoUnita = gemello.confUnita; }
+    } else if (rubrica[cod] && rubrica[cod].qta > 0) {
+      m.formatoQta = rubrica[cod].qta; m.formatoUnita = unitaBuona(rubrica[cod].unita, "g");
+    }
+    salvaCoda();
+    render();
+    nota("Codice " + cod + " abbinato a «" + p.descrizione + "». Cerco il prodotto nel catalogo…");
+    catalogo(cod).then(function (info) {
+      if (bozza(p).barcode !== cod) return;
+      if (!info) { nota("Il codice " + cod + " non è in catalogo: scrivi tu nome e formato nella scheda."); return; }
+      m.prodotto = m.prodotto || info.prodotto;
+      m.marca = m.marca || info.marca;
+      if (!(m.formatoQta > 0) && info.confQta > 0) { m.formatoQta = info.confQta; m.formatoUnita = info.confUnita; }
+      m.valori = { kcal: info.kcal, proteine: info.proteine, carboidrati: info.carboidrati, grassi: info.grassi, formato: info.formato };
+      salvaCoda();
+      render();
+      nota("Trovato: " + (info.prodotto || "prodotto senza nome") + ". Controlla quantità e scadenza, poi tocca Registra.");
+    }).catch(function () {
+      nota("Non riesco a raggiungere il catalogo: scrivi tu nome e formato, oppure riprova più tardi.", true);
+    });
+  }
+
+  /* Porta in casa una riga dello scontrino e lo dice al foglio, che ricorderà l'abbinamento. */
+  function registra(p) {
+    var m = bozza(p);
+    if (m.tipo !== "SFUSO" && !m.barcode) { nota("Prima scansiona il codice a barre, oppure tocca «Senza codice».", true); return; }
+    var q = numero(m.quantita, 0);
+    if (!(q > 0)) { nota("Scrivi la quantità.", true); return; }
+    var luogo = m.dove || dove;
+    var nome = String(m.prodotto || p.descrizione || "").trim();
+    var it, id, avevoScorta = false;
+    if (m.tipo === "SFUSO") {
+      id = luogo + "_" + (chiaveDa(nome) || ("S" + Date.now()));
+      it = items.get(id);
+      avevoScorta = !!it && totale(it).qta > 0;
+      if (!it) { it = nuovoProdotto(id, "", nome.toUpperCase(), luogo); it.confUnita = m.unita; it.resUnita = m.unita; items.set(id, it); }
+      sommaSfuso(it, q, m.unita);
+    } else {
+      id = luogo + "_" + m.barcode;
+      it = items.get(id);
+      avevoScorta = !!it && totale(it).qta > 0;
+      if (!it) {
+        it = nuovoProdotto(id, m.barcode, nome, luogo);
+        it.marca = m.marca || "";
+        if (m.valori) { it.kcal = m.valori.kcal; it.proteine = m.valori.proteine; it.carboidrati = m.valori.carboidrati; it.grassi = m.valori.grassi; it.formato = m.valori.formato || ""; }
+        items.set(id, it);
+      }
+      if (!it.prodotto) { it.prodotto = nome; }
+      if (m.formatoQta > 0) {
+        it.confQta = m.formatoQta;
+        it.confUnita = m.formatoUnita;
+        if (!(it.aperta && numero(it.residua, 0) > 0)) { it.resUnita = m.formatoUnita; }
+        ricorda(m.barcode, m.formatoQta, m.formatoUnita);
+      }
+      it.chiuse = pulito(numero(it.chiuse, 0) + q);
+    }
+    if (m.scadenza) {
+      /* se in casa ce n'era già, resta la scadenza più vicina; se era finito, vale quella nuova */
+      it.scadenza = (avevoScorta && it.scadenza) ? primaScadenza(it.scadenza, m.scadenza) : m.scadenza;
+      it.scadenzaStimata = !!m.stimata;
+    }
+    if (luogo === "FREEZER" && !it.congelatoIl) { it.congelatoIl = oggiLocale(); }
+    it.ts = Date.now();
+    coda.completati.push({
+      idRiga: p.idRiga, tipo: m.tipo === "SFUSO" ? "SFUSO" : "CODICE", barcode: m.tipo === "SFUSO" ? "" : m.barcode,
+      prodotto: nome, marca: m.marca || "",
+      formatoQta: m.tipo === "SFUSO" ? "" : (m.formatoQta || ""), formatoUnita: m.tipo === "SFUSO" ? m.unita : (m.formatoQta > 0 ? m.formatoUnita : ""),
+      dove: luogo, durataGiorni: m.scadenza ? giorniTra(p.dataAcquisto || oggiLocale(), m.scadenza) : "", scadenza: m.scadenza || ""
+    });
+    movimento("ENTRATA", it, q, m.tipo === "SFUSO" ? m.unita : "conf", "SCONTRINO", p.descrizione);
+    pendenti = pendenti.filter(function (x) { return x !== p; });
+    if (inAttesa === p.idRiga) { inAttesa = ""; }
+    salvaCoda();
+    evidenzia(id);
+    daMostrare = "";
+    salva();
+    nota((it.prodotto || nome) + " registrato in " + nomeLuogo(luogo).toLowerCase() + ". Ora in casa: " + totaleScritto(it) + ".");
+  }
+
+  function scarta(p) {
+    coda.ignorati.push({ idRiga: p.idRiga });
+    pendenti = pendenti.filter(function (x) { return x !== p; });
+    if (inAttesa === p.idRiga) { inAttesa = ""; }
+    salvaCoda();
+    render();
+    programmaSync();
+    nota("«" + p.descrizione + "» scartato: non te lo riproporrò alle prossime spese.");
+  }
+
+  function renderPendenti() {
+    var box = $("pendenti");
+    $("sez-pendenti").style.display = pendenti.length ? "" : "none";
+    box.innerHTML = "";
+    if (!pendenti.length) return;
+    $("pend-titolo").textContent = "Dallo scontrino · " + pendenti.length + " da completare";
+    var el = document.createElement("div");
+    el.className = "lista";
+    pendenti.forEach(function (p) { el.appendChild(schedaPendente(p)); });
+    box.appendChild(el);
+  }
+
+  function schedaPendente(p) {
+    var m = bozza(p);
+    var r = document.createElement("div");
+    r.className = "riga" + (inAttesa === p.idRiga ? " puntata" : "");
+    r.id = "p-" + p.idRiga;
+    var cambia = function (fn) { return function () { editing = false; fn(this); salvaCoda(); }; };
+    var campo = function (el) { el.onfocus = function () { editing = true; }; el.onblur = finito; return el; };
+
+    var testa = document.createElement("div");
+    testa.className = "testa";
+    var sx = document.createElement("div");
+    var nome = campo(document.createElement("input"));
+    nome.className = "titolo";
+    nome.value = m.prodotto || "";
+    nome.placeholder = p.descrizione;
+    nome.setAttribute("aria-label", "nome del prodotto");
+    nome.onchange = cambia(function (e) { m.prodotto = e.value.trim(); });
+    sx.appendChild(nome);
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = [p.descrizione, p.negozio, dataBreve(p.dataAcquisto), p.prezzo !== "" ? scritto(numero(p.prezzo, 0)) + " €" : ""].filter(Boolean).join(" · ");
+    sx.appendChild(meta);
+    if (p.dubbio) {
+      var et = document.createElement("div");
+      et.className = "etichette";
+      var d = document.createElement("span");
+      d.className = "dubbio";
+      d.textContent = "Non so se è un alimento";
+      et.appendChild(d);
+      sx.appendChild(et);
+    }
+    testa.appendChild(sx);
+    r.appendChild(testa);
+
+    /* codice a barre: da scansionare, già noto, oppure prodotto senza codice */
+    var cb = comando("Codice a barre");
+    var bottone = function (testo, premuto, azione) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "mini";
+      b.textContent = testo;
+      if (premuto !== null) { b.setAttribute("aria-pressed", String(premuto)); }
+      b.onclick = azione;
+      return b;
+    };
+    if (m.tipo === "CODICE" && m.barcode) {
+      var cifre = document.createElement("span");
+      cifre.className = "testo";
+      cifre.textContent = m.barcode;
+      cb.appendChild(cifre);
+      cb.appendChild(bottone("Cambia", null, function () { m.barcode = ""; m.tipo = ""; salvaCoda(); render(); }));
+    } else {
+      cb.appendChild(bottone(inAttesa === p.idRiga ? "Ti ascolto…" : "Scansiona", inAttesa === p.idRiga, function () {
+        inAttesa = inAttesa === p.idRiga ? "" : p.idRiga;
+        if (m.tipo === "SFUSO") { m.tipo = ""; m.unita = "conf"; salvaCoda(); }
+        render();
+        if (inAttesa) {
+          nota("Passa davanti alla fotocamera il codice di «" + p.descrizione + "», oppure scrivilo a mano qui sopra.");
+          if (!acceso) { accendi(); }
+          if (camera.scrollIntoView) { camera.scrollIntoView({ block: "center", behavior: "smooth" }); }
+        }
+      }));
+      cb.appendChild(bottone("Senza codice", m.tipo === "SFUSO", function () {
+        if (inAttesa === p.idRiga) { inAttesa = ""; }
+        m.tipo = m.tipo === "SFUSO" ? "" : "SFUSO";
+        if (m.tipo === "SFUSO" && m.unita === "conf") { m.unita = "pz"; }
+        if (m.tipo !== "SFUSO") { m.unita = "conf"; }
+        salvaCoda();
+        render();
+      }));
+    }
+    r.appendChild(cb);
+
+    var tendina = function (voci, scelto, etichetta) {
+      var s = document.createElement("select");
+      s.className = "unita";
+      s.setAttribute("aria-label", etichetta);
+      voci.forEach(function (v) {
+        var o = document.createElement("option");
+        o.value = v[0];
+        o.textContent = v[1];
+        if (v[0] === scelto) { o.selected = true; }
+        s.appendChild(o);
+      });
+      return s;
+    };
+    var numeroIn = function (valore, etichetta) {
+      var n = campo(document.createElement("input"));
+      n.className = "resto";
+      n.inputMode = "decimal";
+      n.value = valore > 0 ? scritto(valore) : "";
+      n.placeholder = "quanto";
+      n.setAttribute("aria-label", etichetta);
+      return n;
+    };
+
+    if (m.tipo === "CODICE") {
+      var fo = comando("Formato", "quanto contiene una confezione");
+      var fq = numeroIn(m.formatoQta, "formato");
+      fq.onchange = cambia(function (e) { m.formatoQta = Math.max(0, numero(e.value, 0)); });
+      var fu = tendina(UNITA, m.formatoUnita, "unità del formato");
+      fu.onchange = cambia(function (e) { m.formatoUnita = e.value; });
+      fo.appendChild(fq);
+      fo.appendChild(fu);
+      r.appendChild(fo);
+    }
+
+    var qt = comando("Quantità");
+    var qq = numeroIn(m.quantita, "quantità");
+    qq.onchange = cambia(function (e) { m.quantita = Math.max(0, numero(e.value, 0)); });
+    qt.appendChild(qq);
+    if (m.tipo === "SFUSO") {
+      var qu = tendina(UNITA, m.unita, "unità della quantità");
+      qu.onchange = cambia(function (e) { m.unita = e.value; });
+      qt.appendChild(qu);
+    } else {
+      var conf = document.createElement("span");
+      conf.className = "testo";
+      conf.textContent = "confezioni";
+      qt.appendChild(conf);
+    }
+    r.appendChild(qt);
+
+    var dv = comando("Dove lo metti");
+    var dl = tendina(LUOGHI.map(function (l) { return [l, nomeLuogo(l)]; }), m.dove || dove, "dove lo metti");
+    dl.onchange = cambia(function (e) { m.dove = e.value; });
+    dv.appendChild(dl);
+    r.appendChild(dv);
+
+    var sc = comando("Scade il", m.stimata && m.scadenza ? "proposta dalla volta scorsa: controlla" : "");
+    var data = campo(document.createElement("input"));
+    data.type = "date";
+    data.setAttribute("aria-label", "scadenza");
+    data.value = m.scadenza || "";
+    data.onchange = cambia(function (e) { m.scadenza = e.value; m.stimata = false; });
+    sc.appendChild(data);
+    r.appendChild(sc);
+
+    var rapide = comando("");
+    rapide.firstChild.style.display = "none";
+    [["+3 giorni", 3], ["+1 settimana", 7], ["+1 mese", 30], ["Nessuna", 0]].forEach(function (c) {
+      rapide.appendChild(bottone(c[0], null, function () {
+        m.scadenza = c[1] ? giornoDa("", c[1]) : "";
+        m.stimata = false;
+        salvaCoda();
+        render();
+      }));
+    });
+    r.appendChild(rapide);
+
+    var fondo = document.createElement("div");
+    fondo.className = "comando via";
+    var no = document.createElement("button");
+    no.type = "button";
+    no.textContent = "Non è un alimento";
+    no.onclick = function () { scarta(p); };
+    var si = document.createElement("button");
+    si.type = "button";
+    si.className = "forte";
+    si.textContent = "Registra";
+    si.onclick = function () { registra(p); };
+    fondo.appendChild(no);
+    fondo.appendChild(si);
+    r.appendChild(fondo);
+    return r;
+  }
+
+  /* ---------- sincronizzazione col foglio ---------- */
+
+  function statoFoglio(testo, allarme) {
+    var e = $("stato-foglio");
+    e.textContent = testo || "";
+    e.className = allarme ? "nota allarme" : "nota";
+  }
+
+  function aggiornaCollega() {
+    $("btn-collega").textContent = chiave ? "Scollega dal foglio" : "Collega al foglio";
+    if (!chiave) { statoFoglio("Non collegato al foglio: i dati restano solo su questo telefono."); }
+  }
+
+  /* Un prodotto com'è scritto nel foglio: i dati della riga più il totale già calcolato. */
+  function perFoglio(it) {
+    var t = totale(it);
+    return {
+      id: it.id, ts: it.ts || 0, barcode: it.barcode || "", prodotto: it.prodotto || "", marca: it.marca || "",
+      categoria: it.categoria || "", dove: it.dove, confQta: it.confQta || 0, confUnita: it.confUnita || "pz",
+      chiuse: numero(it.chiuse, 0), aperta: !!it.aperta, residua: numero(it.residua, 0), resUnita: it.resUnita || "",
+      totale: t.certo ? t.qta : "", totaleUnita: t.certo ? t.unita : "", scadenza: it.scadenza || "",
+      kcal: it.kcal, proteine: it.proteine, carboidrati: it.carboidrati, grassi: it.grassi,
+      nota: notaCsv(it, t), stato: it.stato || "ok", congelatoIl: it.congelatoIl || "", formato: it.formato || "",
+      scadenzaStimata: !!it.scadenzaStimata
+    };
+  }
+
+  function programmaSync() {
+    if (!chiave) return;
+    clearTimeout(timerSync);
+    timerSync = setTimeout(sincronizza, 2500);
+  }
+
+  /* Il foglio risponde con lo stato fuso di tutti i telefoni: per ogni prodotto vince la modifica più recente. */
+  function accogli(d) {
+    var tolti = {};
+    (d.eliminati || []).forEach(function (e) { tolti[e.id] = e.ts; });
+    var arrivati = {};
+    (d.giacenze || []).forEach(function (r) {
+      if (!r || !r.id) return;
+      arrivati[r.id] = true;
+      var mio = items.get(r.id);
+      if (!mio || numero(r.ts, 0) > numero(mio.ts, 0)) { items.set(r.id, migra(r)); }
+    });
+    items.forEach(function (it, id) {
+      if (!arrivati[id] && tolti[id] !== undefined && tolti[id] >= numero(it.ts, 0)) { items.delete(id); }
+    });
+    lapidi.forEach(function (l) { if (tolti[l.id] === undefined || l.ts > tolti[l.id]) { tolti[l.id] = l.ts; } });
+    lapidi = Object.keys(tolti).map(function (id) { return { id: id, ts: tolti[id] }; });
+
+    var inLavoro = {}, inCoda = {};
+    pendenti.forEach(function (p) { inLavoro[p.idRiga] = p; });
+    coda.completati.concat(coda.ignorati).forEach(function (c) { inCoda[c.idRiga] = true; });
+    pendenti = (d.pendenti || []).filter(function (p) { return !inCoda[p.idRiga]; }).map(function (p) {
+      if (inLavoro[p.idRiga] && inLavoro[p.idRiga].mio) { p.mio = inLavoro[p.idRiga].mio; }
+      return p;
+    });
+    salvaCoda();
+    salva(true);
+  }
+
+  function sincronizza() {
+    if (!chiave) return;
+    if (inSync) { daRisincronizzare = true; return; }
+    if (navigator.onLine === false) {
+      statoFoglio("Senza rete: le modifiche restano sul telefono e partono appena torna.", true);
+      return;
+    }
+    inSync = true;
+    clearTimeout(timerSync);
+    var spediti = { c: coda.completati.length, i: coda.ignorati.length, m: coda.movimenti.length };
+    var corpo = {
+      chiave: chiave, giacenze: Array.from(items.values()).map(perFoglio), eliminati: lapidi,
+      completati: coda.completati, ignorati: coda.ignorati, movimenti: coda.movimenti
+    };
+    /* testo semplice: così il browser non fa una richiesta di controllo in più prima di quella vera */
+    fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=UTF-8" }, body: JSON.stringify(corpo) })
+      .then(function (r) { if (!r.ok) { throw new Error("HTTP " + r.status); } return r.json(); })
+      .then(function (d) {
+        inSync = false;
+        if (d && d.ok === false && d.errore === "PAROLA_ERRATA") {
+          chiave = "";
+          try { localStorage.removeItem("chiave"); } catch (e) {}
+          aggiornaCollega();
+          statoFoglio("La parola d'ordine non è giusta: tocca «Collega al foglio» e riscrivila.", true);
+          return;
+        }
+        if (!d || d.ok !== true) { throw new Error("risposta non valida"); }
+        coda.completati.splice(0, spediti.c);
+        coda.ignorati.splice(0, spediti.i);
+        coda.movimenti.splice(0, spediti.m);
+        accogli(d);
+        statoFoglio("Foglio aggiornato alle " + oraAdesso() + ".");
+        if (daRisincronizzare) { daRisincronizzare = false; programmaSync(); }
+      })
+      .catch(function () {
+        inSync = false;
+        statoFoglio("Non riesco a raggiungere il foglio: le modifiche restano sul telefono, riprovo da solo.", true);
+      });
+  }
+
+  $("btn-collega").onclick = function () {
+    if (chiave) {
+      if (!confirm("Scollego questo telefono dal foglio? I dati restano qui, ma non vengono più inviati.")) return;
+      chiave = "";
+      try { localStorage.removeItem("chiave"); } catch (e) {}
+      aggiornaCollega();
+      return;
+    }
+    var p = prompt("Scrivi la parola d'ordine del foglio:", "");
+    if (!p || !p.trim()) return;
+    chiave = p.trim().toUpperCase();
+    try { localStorage.setItem("chiave", chiave); } catch (e) {}
+    aggiornaCollega();
+    statoFoglio("Collegamento in corso…");
+    sincronizza();
+  };
+
+  window.addEventListener("online", sincronizza);
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) { sincronizza(); } });
+
   /* ---------- avvio ---------- */
 
+  try { chiave = localStorage.getItem("chiave") || ""; } catch (e) {}
+  (function () {
+    var c = leggiMemoria("coda", null);
+    if (c && typeof c === "object") {
+      ["completati", "ignorati", "movimenti"].forEach(function (k) { if (Array.isArray(c[k])) { coda[k] = c[k]; } });
+    }
+    var l = leggiMemoria("lapidi", []);
+    lapidi = Array.isArray(l) ? l : [];
+    var p = leggiMemoria("pendenti", []);
+    pendenti = Array.isArray(p) ? p.filter(function (x) { return x && x.idRiga; }) : [];
+    modo = leggiMemoria("modo", "ENTRATA") === "USCITA" ? "USCITA" : "ENTRATA";
+  })();
+
   chips();
+  modi();
   caricaRubrica();
   carica();
   render();
+  aggiornaCollega();
   riprova();
+  sincronizza();
 })();
 </script>
 </body>
