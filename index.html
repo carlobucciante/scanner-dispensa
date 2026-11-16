@@ -280,6 +280,26 @@
   .nome-spesa { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
   .altri-spesa { display: block; width: 100%; min-height: 48px; margin-top: 12px; border-radius: 14px; background: var(--card); color: var(--blu); font-weight: 600; }
 
+  /* conferma che il foglio ha registrato il codice: spunta verde al centro dello schermo */
+  .conferma-spesa {
+    position: fixed; left: 50%; top: 42%; z-index: 50; transform: translate(-50%, -50%) scale(0.9);
+    width: min(78vw, 280px); padding: 26px 20px 22px; border-radius: 22px; text-align: center;
+    background: var(--card); color: var(--ink); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+    opacity: 0; pointer-events: none; transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+  }
+  .conferma-spesa.vista { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .conferma-spesa svg { width: 76px; height: 76px; display: block; margin: 0 auto 12px; }
+  .conferma-spesa circle { fill: var(--verde); }
+  .conferma-spesa path { fill: none; stroke: #FFFFFF; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 48; stroke-dashoffset: 48; }
+  .conferma-spesa.vista path { animation: traccia 0.32s 0.12s ease-out forwards; }
+  @keyframes traccia { to { stroke-dashoffset: 0; } }
+  .conferma-spesa b { display: block; font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .conferma-spesa span { display: block; font-size: 15px; color: var(--ink-2); overflow-wrap: anywhere; }
+  @media (prefers-reduced-motion: reduce) {
+    .conferma-spesa { transition: none; transform: translate(-50%, -50%); }
+    .conferma-spesa path { animation: none; stroke-dashoffset: 0; }
+  }
+
   .vuoto { background: var(--card); border-radius: var(--raggio); padding: 18px 16px; }
   .vuoto p { margin: 0 0 10px; color: var(--ink-2); font-size: 15px; }
   .vuoto ol { margin: 0; padding-left: 22px; color: var(--ink-2); font-size: 15px; }
@@ -351,6 +371,12 @@
       <button class="ghost" id="btn-sfuso">Aggiungi</button>
     </div>
   </section>
+
+  <div class="conferma-spesa" id="conferma-spesa" role="status" aria-live="polite">
+    <svg viewBox="0 0 76 76" aria-hidden="true"><circle cx="38" cy="38" r="38"></circle><path d="M22 39 l11 11 l21 -23"></path></svg>
+    <b id="conferma-titolo">Registrato</b>
+    <span id="conferma-testo"></span>
+  </div>
 
   <section id="sez-spesa" style="display: none">
     <p class="label" id="spesa-titolo">Barcode della spesa</p>
@@ -2177,9 +2203,48 @@
   function salvaSpesa() { scriviMemoria("spesaElenco", spesa); scriviMemoria("spesaCoda", codaSpesa); }
 
   /* Un codice (o la parola SENZA) per una sigla dello scontrino: vale per tutti gli acquisti di quel prodotto. */
+  /* Il foglio ha confermato: spunta verde, due note salenti (diverse dal beep della lettura) e una vibrazione. */
+  var timerConferma = null;
+  function suonoConferma() {
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      var ctx = new Ctx();
+      [[0, 880], [0.13, 1320]].forEach(function (n) {
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = n[1];
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + n[0]);
+        g.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + n[0] + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + n[0] + 0.22);
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start(ctx.currentTime + n[0]);
+        o.stop(ctx.currentTime + n[0] + 0.24);
+      });
+      setTimeout(function () { ctx.close(); }, 800);
+    } catch (e) {}
+  }
+  function confermaSpesa(voci) {
+    if (!voci.length) return;
+    var senza = voci.filter(function (v) { return v.barcode === "SENZA"; }).length;
+    $("conferma-titolo").textContent = voci.length > 1 ? voci.length + " registrati" : (senza ? "Segnato senza codice" : "Registrato");
+    $("conferma-testo").textContent = voci.length > 1 ? "Arrivati nel foglio della spesa" : (voci[0].nome || voci[0].descrizione);
+    var box = $("conferma-spesa");
+    box.classList.remove("vista");
+    void box.offsetWidth;
+    box.classList.add("vista");
+    suonoConferma();
+    try { if (navigator.vibrate) { navigator.vibrate(70); } } catch (e) {}
+    clearTimeout(timerConferma);
+    timerConferma = setTimeout(function () { box.classList.remove("vista"); }, 1800);
+  }
+
   function registraSpesa(descrizione, codice) {
+    var scheda = spesa.elenco.filter(function (p) { return p.descrizione === descrizione; })[0];
+    var nome = scheda ? (scheda.prodotto ? ((scheda.marca ? scheda.marca + " " : "") + scheda.prodotto) : scheda.descrizione) : descrizione;
     codaSpesa = codaSpesa.filter(function (v) { return v.descrizione !== descrizione; });
-    codaSpesa.push({ descrizione: descrizione, barcode: codice });
+    codaSpesa.push({ descrizione: descrizione, barcode: codice, nome: nome });
     spesa.elenco = spesa.elenco.filter(function (p) { return p.descrizione !== descrizione; });
     if (inAttesaSpesa === descrizione) { inAttesaSpesa = ""; }
     salvaSpesa();
@@ -2224,6 +2289,10 @@
         avvisoSpesa = "";
         salvaSpesa();
         render();
+        /* la conferma arriva solo quando il foglio dice di averli scritti */
+        var sconosciute = d.sconosciute || [];
+        confermaSpesa(spedite.filter(function (v) { return sconosciute.indexOf(v.descrizione) < 0; }));
+        if (sconosciute.length) { avvisoSpesa = "Non trovo nel foglio: " + sconosciute.join(", ") + "."; renderSpesa(); }
         if (codaSpesa.length) { timerSpesa = setTimeout(sincronizzaSpesa, 1500); }
       })
       .catch(function () {
