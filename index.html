@@ -276,6 +276,10 @@
   .etichette .dubbio { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; color: var(--arancio); background: var(--arancio-velo); }
   .etichette .gelo { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; color: var(--blu); background: var(--blu-velo); }
 
+  /* barcode della spesa: un prodotto per riga, due pulsanti */
+  .nome-spesa { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+  .altri-spesa { display: block; width: 100%; min-height: 48px; margin-top: 12px; border-radius: 14px; background: var(--card); color: var(--blu); font-weight: 600; }
+
   .vuoto { background: var(--card); border-radius: var(--raggio); padding: 18px 16px; }
   .vuoto p { margin: 0 0 10px; color: var(--ink-2); font-size: 15px; }
   .vuoto ol { margin: 0; padding-left: 22px; color: var(--ink-2); font-size: 15px; }
@@ -348,6 +352,12 @@
     </div>
   </section>
 
+  <section id="sez-spesa" style="display: none">
+    <p class="label" id="spesa-titolo">Barcode della spesa</p>
+    <p class="nota" id="spesa-nota" style="margin-bottom: 10px" role="status"></p>
+    <div id="spesa"></div>
+  </section>
+
   <section id="sez-pendenti" style="display: none">
     <p class="label" id="pend-titolo">Dallo scontrino</p>
     <div id="pendenti"></div>
@@ -397,6 +407,15 @@
   var lapidi = [];                                   /* prodotti tolti dalla lista: {id, ts} */
   var pendenti = [];                                 /* righe dello scontrino ancora da completare */
   var inAttesa = "";                                 /* riga dello scontrino che aspetta il suo codice a barre */
+
+  /* Barcode della spesa: un altro foglio (SPESA_ESSELUNGA_DETTAGLIO) e un altro workflow (WF_SPESA_ESSELUNGA_BARCODE).
+     Qui si registra SOLO il codice a barre di un prodotto dello scontrino: niente quantità, luogo o scadenza. */
+  var API_SPESA = "https://carlo-bucciante.app.n8n.cloud/webhook/spesa-barcode-7h2k4";
+  var spesa = { elenco: [], totale: 0, prodotti: 0, ora: "" };  /* prodotti ancora senza codice, come li ha detti il foglio */
+  var codaSpesa = [];                                /* codici registrati qui e non ancora arrivati al foglio: {descrizione, barcode} */
+  var inAttesaSpesa = "";                            /* sigla dello scontrino che aspetta il suo codice a barre */
+  var spesaTutti = false, inSpesa = false, timerSpesa = null, avvisoSpesa = "";
+  var SPESA_IN_VISTA = 12;
   var modo = "ENTRATA";
   var inSync = false, timerSync = null, daRisincronizzare = false;
 
@@ -731,6 +750,7 @@
   function render() {
     if (editing || premendo) { sospeso = true; return; }
     sospeso = false;
+    renderSpesa();
     renderPendenti();
     var lista = ordinati();
     filtri(lista);
@@ -1279,6 +1299,7 @@
 
   /* Un codice letto o scritto a mano: può servire a una riga dello scontrino, oppure è un'entrata/uscita. */
   function ricevi(cod) {
+    if (inAttesaSpesa) { registraSpesa(inAttesaSpesa, cod); beep(false); lampeggia(); return; }
     var aspetta = inAttesa ? pendenti.filter(function (p) { return p.idRiga === inAttesa; })[0] : null;
     if (aspetta) { assegnaCodice(aspetta, cod); beep(false); lampeggia(); return; }
     if (modo === "ENTRATA") {
@@ -2037,6 +2058,7 @@
     } else {
       cb.appendChild(bottone(inAttesa === p.idRiga ? "Ti ascolto…" : "Scansiona", inAttesa === p.idRiga, function () {
         inAttesa = inAttesa === p.idRiga ? "" : p.idRiga;
+        if (inAttesa) { inAttesaSpesa = ""; }
         if (m.tipo === "SFUSO") { m.tipo = ""; m.unita = "conf"; salvaCoda(); }
         render();
         if (inAttesa) {
@@ -2150,6 +2172,140 @@
     return r;
   }
 
+  /* ---------- barcode della spesa ---------- */
+
+  function salvaSpesa() { scriviMemoria("spesaElenco", spesa); scriviMemoria("spesaCoda", codaSpesa); }
+
+  /* Un codice (o la parola SENZA) per una sigla dello scontrino: vale per tutti gli acquisti di quel prodotto. */
+  function registraSpesa(descrizione, codice) {
+    codaSpesa = codaSpesa.filter(function (v) { return v.descrizione !== descrizione; });
+    codaSpesa.push({ descrizione: descrizione, barcode: codice });
+    spesa.elenco = spesa.elenco.filter(function (p) { return p.descrizione !== descrizione; });
+    if (inAttesaSpesa === descrizione) { inAttesaSpesa = ""; }
+    salvaSpesa();
+    render();
+    nota(codice === "SENZA" ? "«" + descrizione + "» segnato senza codice a barre." : "Codice " + codice + " registrato per «" + descrizione + "».");
+    clearTimeout(timerSpesa);
+    timerSpesa = setTimeout(sincronizzaSpesa, 1500);
+  }
+
+  /* Spedisce i codici in attesa e riceve l'elenco aggiornato dei prodotti ancora senza codice. */
+  function sincronizzaSpesa() {
+    if (!chiave || inSpesa) return;
+    if (navigator.onLine === false) {
+      avvisoSpesa = codaSpesa.length ? "Senza rete: i codici restano sul telefono e partono appena torna." : "";
+      renderSpesa();
+      return;
+    }
+    inSpesa = true;
+    clearTimeout(timerSpesa);
+    var spedite = codaSpesa.slice();
+    fetch(API_SPESA, { method: "POST", headers: { "Content-Type": "text/plain;charset=UTF-8" }, body: JSON.stringify({ chiave: chiave, voci: spedite }) })
+      .then(function (r) { if (!r.ok) { throw new Error("HTTP " + r.status); } return r.json(); })
+      .then(function (d) {
+        inSpesa = false;
+        if (d && d.ok === false && d.errore === "PAROLA_ERRATA") {
+          avvisoSpesa = "La parola d'ordine non è giusta: tocca «Scollega dal foglio», poi «Collega al foglio» e riscrivila.";
+          renderSpesa();
+          return;
+        }
+        if (!d || d.ok !== true) { throw new Error("risposta non valida"); }
+        /* tolgo dalla coda solo ciò che ho spedito: nel frattempo potresti averne registrati altri */
+        codaSpesa = codaSpesa.filter(function (v) {
+          return !spedite.some(function (s) { return s.descrizione === v.descrizione && s.barcode === v.barcode; });
+        });
+        var inCoda = {};
+        codaSpesa.forEach(function (v) { inCoda[v.descrizione] = true; });
+        spesa = {
+          elenco: (d.daRegistrare || []).filter(function (p) { return p && p.descrizione && !inCoda[p.descrizione]; }),
+          totale: numero(d.totale, 0), prodotti: numero(d.prodotti, 0), ora: oraAdesso()
+        };
+        if (inAttesaSpesa && !spesa.elenco.some(function (p) { return p.descrizione === inAttesaSpesa; })) { inAttesaSpesa = ""; }
+        avvisoSpesa = "";
+        salvaSpesa();
+        render();
+        if (codaSpesa.length) { timerSpesa = setTimeout(sincronizzaSpesa, 1500); }
+      })
+      .catch(function () {
+        inSpesa = false;
+        avvisoSpesa = "Non riesco a raggiungere il foglio della spesa" + (codaSpesa.length ? ": i codici restano sul telefono, riprovo da solo." : ".");
+        renderSpesa();
+        if (codaSpesa.length) { clearTimeout(timerSpesa); timerSpesa = setTimeout(sincronizzaSpesa, 30000); }
+      });
+  }
+
+  function renderSpesa() {
+    var box = $("spesa"), sez = $("sez-spesa");
+    var n = spesa.elenco.length;
+    sez.style.display = (chiave && (n || codaSpesa.length || spesa.ora || avvisoSpesa)) ? "" : "none";
+    box.innerHTML = "";
+    if (!chiave) return;
+    $("spesa-titolo").textContent = "Barcode della spesa" + (n ? " · " + n + " da registrare" : "");
+    var testo = n
+      ? "Tocca «Scansiona» e inquadra il codice del prodotto. Basta farlo per quelli che hai in casa: gli altri restano qui."
+      : (spesa.ora ? "Tutti i prodotti della spesa hanno il loro codice." : "");
+    if (codaSpesa.length) { testo += (testo ? " " : "") + (codaSpesa.length === 1 ? "1 codice in attesa di invio." : codaSpesa.length + " codici in attesa di invio."); }
+    var avv = $("spesa-nota");
+    avv.textContent = avvisoSpesa || testo;
+    avv.className = avvisoSpesa ? "nota allarme" : "nota";
+    if (!n) return;
+
+    var el = document.createElement("div");
+    el.className = "lista";
+    spesa.elenco.slice(0, spesaTutti ? n : SPESA_IN_VISTA).forEach(function (p) {
+      var r = document.createElement("div");
+      r.className = "riga" + (inAttesaSpesa === p.descrizione ? " puntata" : "");
+      var testa = document.createElement("div");
+      testa.className = "testa";
+      var sx = document.createElement("div");
+      var nome = document.createElement("div");
+      nome.className = "nome-spesa";
+      nome.textContent = p.prodotto ? ((p.marca ? p.marca + " " : "") + p.prodotto) : p.descrizione;
+      sx.appendChild(nome);
+      var meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = [p.descrizione, p.alimento, p.volte === 1 ? "comprato 1 volta" : "comprato " + p.volte + " volte", p.ultima ? "ultima " + dataBreve(p.ultima) : ""].filter(Boolean).join(" · ");
+      sx.appendChild(meta);
+      testa.appendChild(sx);
+      r.appendChild(testa);
+
+      var cb = comando("Codice a barre");
+      var b1 = document.createElement("button");
+      b1.type = "button";
+      b1.className = "mini";
+      b1.textContent = inAttesaSpesa === p.descrizione ? "Ti ascolto…" : "Scansiona";
+      b1.setAttribute("aria-pressed", String(inAttesaSpesa === p.descrizione));
+      b1.onclick = function () {
+        inAttesaSpesa = inAttesaSpesa === p.descrizione ? "" : p.descrizione;
+        if (inAttesaSpesa) { inAttesa = ""; }
+        render();
+        if (inAttesaSpesa) {
+          nota("Passa davanti alla fotocamera il codice di «" + p.descrizione + "», oppure scrivilo a mano qui sopra.");
+          if (!acceso) { accendi(); }
+          if (camera.scrollIntoView) { camera.scrollIntoView({ block: "center", behavior: "smooth" }); }
+        }
+      };
+      var b2 = document.createElement("button");
+      b2.type = "button";
+      b2.className = "mini";
+      b2.textContent = "Senza codice";
+      b2.onclick = function () { registraSpesa(p.descrizione, "SENZA"); };
+      cb.appendChild(b1);
+      cb.appendChild(b2);
+      r.appendChild(cb);
+      el.appendChild(r);
+    });
+    box.appendChild(el);
+    if (n > SPESA_IN_VISTA) {
+      var altri = document.createElement("button");
+      altri.type = "button";
+      altri.className = "altri-spesa";
+      altri.textContent = spesaTutti ? "Mostra solo i più comprati" : "Mostra anche gli altri " + (n - SPESA_IN_VISTA);
+      altri.onclick = function () { spesaTutti = !spesaTutti; renderSpesa(); };
+      box.appendChild(altri);
+    }
+  }
+
   /* ---------- sincronizzazione col foglio ---------- */
 
   function statoFoglio(testo, allarme) {
@@ -2256,7 +2412,9 @@
       if (!confirm("Scollego questo telefono dal foglio? I dati restano qui, ma non vengono più inviati.")) return;
       chiave = "";
       try { localStorage.removeItem("chiave"); } catch (e) {}
+      inAttesaSpesa = ""; avvisoSpesa = "";
       aggiornaCollega();
+      render();
       return;
     }
     var p = prompt("Scrivi la parola d'ordine del foglio:", "");
@@ -2266,10 +2424,11 @@
     aggiornaCollega();
     statoFoglio("Collegamento in corso…");
     sincronizza();
+    sincronizzaSpesa();
   };
 
-  window.addEventListener("online", sincronizza);
-  document.addEventListener("visibilitychange", function () { if (!document.hidden) { sincronizza(); } });
+  window.addEventListener("online", function () { sincronizza(); sincronizzaSpesa(); });
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) { sincronizza(); sincronizzaSpesa(); } });
 
   /* ---------- avvio ---------- */
 
@@ -2284,6 +2443,12 @@
     var p = leggiMemoria("pendenti", []);
     pendenti = Array.isArray(p) ? p.filter(function (x) { return x && x.idRiga; }) : [];
     modo = leggiMemoria("modo", "ENTRATA") === "USCITA" ? "USCITA" : "ENTRATA";
+    var se = leggiMemoria("spesaElenco", null);
+    if (se && typeof se === "object" && Array.isArray(se.elenco)) {
+      spesa = { elenco: se.elenco.filter(function (x) { return x && x.descrizione; }), totale: numero(se.totale, 0), prodotti: numero(se.prodotti, 0), ora: se.ora || "" };
+    }
+    var sc = leggiMemoria("spesaCoda", []);
+    codaSpesa = Array.isArray(sc) ? sc.filter(function (x) { return x && x.descrizione && x.barcode; }) : [];
   })();
 
   chips();
@@ -2294,6 +2459,7 @@
   aggiornaCollega();
   riprova();
   sincronizza();
+  sincronizzaSpesa();
 })();
 </script>
 </body>
