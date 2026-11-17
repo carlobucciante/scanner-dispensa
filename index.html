@@ -283,6 +283,19 @@
   .invia-spesa { display: block; width: 100%; min-height: 50px; margin-bottom: 14px; border-radius: 14px; background: var(--blu); color: #FFFFFF; font-weight: 600; }
   .invia-spesa:disabled { opacity: 0.55; }
   .dubbio-spesa { box-shadow: 0 0 0 2px var(--arancio); margin-bottom: 14px; }
+  .riepilogo-spesa { background: var(--card); border-radius: var(--raggio); padding: 14px 16px 16px; margin-bottom: 14px; box-shadow: 0 0 0 2px var(--blu); }
+  .riepilogo-spesa h3 { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .riepilogo-spesa .nota { margin: 0 0 10px; }
+  .voce-riepilogo { padding: 10px 0; border-top: 1px solid var(--sep); }
+  .voce-riepilogo .sigla { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+  .voce-riepilogo .codice { font-size: 17px; font-variant-numeric: tabular-nums; letter-spacing: 0.5px; margin: 2px 0 6px; }
+  .voce-riepilogo .codice.senza { color: var(--ink-2); font-style: italic; letter-spacing: 0; }
+  .voce-riepilogo .azioni { display: flex; flex-wrap: wrap; gap: 8px; }
+  .voce-riepilogo .azioni button { height: 34px; padding: 0 12px; border-radius: 8px; background: var(--blu-velo); color: var(--blu); font-size: 15px; font-weight: 600; }
+  .voce-riepilogo .azioni button.togli { color: var(--rosso); background: transparent; }
+  .voce-riepilogo input { width: 100%; height: 40px; margin: 4px 0 8px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--sep); background: var(--fill); color: var(--ink); font-size: 17px; }
+  .voce-riepilogo.puntata { background: var(--blu-velo); border-radius: 10px; padding-left: 8px; padding-right: 8px; }
+  .riepilogo-spesa .chiudi { display: block; width: 100%; min-height: 44px; margin-top: 8px; border-radius: 12px; background: transparent; color: var(--blu); font-weight: 600; }
   .dubbio-spesa .meta { color: var(--arancio); }
 
   /* conferma che il foglio ha registrato il codice: spunta verde al centro dello schermo */
@@ -447,6 +460,8 @@
   var inAttesaSpesa = "";                            /* sigla dello scontrino che aspetta il suo codice a barre */
   var spesaTutti = false, inSpesa = false, avvisoSpesa = "";
   var dubbiSpesa = [];                               /* codici che il foglio ha fermato perché già di un altro prodotto */
+  var riepilogoAperto = false;                       /* schermata di riepilogo prima dell'invio */
+  var inModifica = "";                               /* sigla della voce del riepilogo che si sta correggendo a mano */
   var SPESA_IN_VISTA = 12;
   var modo = "ENTRATA";
   var inSync = false, timerSync = null, daRisincronizzare = false;
@@ -2249,16 +2264,25 @@
   function registraSpesa(descrizione, codice, forza) {
     var scheda = spesa.elenco.filter(function (p) { return p.descrizione === descrizione; })[0];
     var dubbio = dubbiSpesa.filter(function (d) { return d.descrizione === descrizione; })[0];
-    var nome = scheda ? (scheda.prodotto ? ((scheda.marca ? scheda.marca + " " : "") + scheda.prodotto) : scheda.descrizione) : (dubbio ? dubbio.nome : descrizione);
+    var prima = codaSpesa.filter(function (v) { return v.descrizione === descrizione; })[0];   /* correzione dal riepilogo */
+    var nome = scheda ? (scheda.prodotto ? ((scheda.marca ? scheda.marca + " " : "") + scheda.prodotto) : scheda.descrizione) : (prima ? prima.nome : (dubbio ? dubbio.nome : descrizione));
+    var originale = scheda || (prima && prima.scheda) || null;
     codaSpesa = codaSpesa.filter(function (v) { return v.descrizione !== descrizione; });
-    codaSpesa.push({ descrizione: descrizione, barcode: codice, nome: nome, forza: !!forza });
+    /* etichetta del banco (13 cifre che iniziano con 2): le prime 7 sono l'articolo, poi 5 cifre di prezzo
+       in centesimi che cambiano a ogni confezione. Si registra l'articolo; il prezzo serve al controllo. */
+    var prezzo = null;
+    if (/^2\d{12}$/.test(codice)) { prezzo = parseInt(codice.slice(7, 12), 10) / 100; codice = codice.slice(0, 7); }
+    var voce = { descrizione: descrizione, barcode: codice, nome: nome, forza: !!forza, scheda: originale, prezzo: prezzo };
+    if (prima) { codaSpesa.splice(Math.min(prima.posto || 0, codaSpesa.length), 0, voce); } else { codaSpesa.push(voce); }
+    codaSpesa.forEach(function (v, i) { v.posto = i; });
+    if (inModifica === descrizione) { inModifica = ""; }
     spesa.elenco = spesa.elenco.filter(function (p) { return p.descrizione !== descrizione; });
     dubbiSpesa = dubbiSpesa.filter(function (d) { return d.descrizione !== descrizione; });
     if (inAttesaSpesa === descrizione) { inAttesaSpesa = ""; }
     salvaSpesa();
     render();
     nota((codice === "SENZA" ? "«" + descrizione + "» segnato senza codice." : "Codice " + codice + " per «" + descrizione + "».") +
-      " Resta sul telefono: quando hai finito tocca «Invia i codici».");
+      (prima ? " Corretto nel riepilogo." : " Resta sul telefono: quando hai finito tocca «Rivedi e invia»."));
   }
 
   /* L'unico momento in cui l'app parla col foglio della spesa: una sola esecuzione per tutti i codici in attesa. */
@@ -2272,7 +2296,8 @@
     inSpesa = true;
     renderSpesa();
     var spedite = codaSpesa.slice();
-    fetch(API_SPESA, { method: "POST", headers: { "Content-Type": "text/plain;charset=UTF-8" }, body: JSON.stringify({ chiave: chiave, voci: spedite }) })
+    var voci = spedite.map(function (v) { return { descrizione: v.descrizione, barcode: v.barcode, forza: !!v.forza, prezzo: v.prezzo || null }; });
+    fetch(API_SPESA, { method: "POST", headers: { "Content-Type": "text/plain;charset=UTF-8" }, body: JSON.stringify({ chiave: chiave, voci: voci }) })
       .then(function (r) { if (!r.ok) { throw new Error("HTTP " + r.status); } return r.json(); })
       .then(function (d) {
         inSpesa = false;
@@ -2290,7 +2315,7 @@
         spedite.forEach(function (v) { nomi[v.descrizione] = v.nome || v.descrizione; });
         (d.duplicati || []).forEach(function (x) {
           dubbiSpesa = dubbiSpesa.filter(function (y) { return y.descrizione !== x.descrizione; });
-          dubbiSpesa.push({ descrizione: x.descrizione, barcode: x.barcode, nome: nomi[x.descrizione] || x.descrizione, giaDiNome: x.giaDiNome || x.giaDi });
+          dubbiSpesa.push({ descrizione: x.descrizione, barcode: x.barcode, nome: nomi[x.descrizione] || x.descrizione, giaDiNome: x.giaDiNome || x.giaDi, motivo: x.motivo || "GIA_USATO", prezzo: x.prezzo || null });
         });
         var fermati = {};
         dubbiSpesa.concat(codaSpesa).forEach(function (v) { fermati[v.descrizione] = true; });
@@ -2305,6 +2330,7 @@
         var off = d.openFoodFacts || {};
         if (off.sitoNonRaggiungibile) { avvisi.push("Open Food Facts non ha risposto: marca, nome e formato arriveranno al prossimo invio."); }
         avvisoSpesa = avvisi.join(" ");
+        if (!codaSpesa.length) { riepilogoAperto = false; inModifica = ""; }
         salvaSpesa();
         render();
         /* la spunta verde solo per ciò che il foglio ha davvero scritto */
@@ -2324,6 +2350,111 @@
         avvisoSpesa = "Non riesco a raggiungere il foglio della spesa" + (codaSpesa.length ? ": i codici restano sul telefono, riprova «Invia i codici» più tardi." : ".");
         renderSpesa();
       });
+  }
+
+  /* Riepilogo prima dell'invio: sigla dello scontrino e codice, una voce per prodotto, tutto correggibile. */
+  function riepilogo() {
+    var p = document.createElement("div");
+    p.className = "riepilogo-spesa";
+    p.id = "riepilogo-spesa";
+    var t = document.createElement("h3");
+    t.textContent = "Riepilogo da inviare · " + codaSpesa.length;
+    p.appendChild(t);
+    var n = document.createElement("p");
+    n.className = "nota";
+    n.textContent = "Controlla che ogni codice sia quello giusto. Se c'è un errore tocca «Modifica».";
+    p.appendChild(n);
+    codaSpesa.forEach(function (v) {
+      var r = document.createElement("div");
+      r.className = "voce-riepilogo" + (inAttesaSpesa === v.descrizione ? " puntata" : "");
+      var s = document.createElement("div");
+      s.className = "sigla";
+      s.textContent = v.descrizione;
+      r.appendChild(s);
+      if (v.nome && v.nome !== v.descrizione) {
+        var m = document.createElement("div");
+        m.className = "meta";
+        m.textContent = v.nome;
+        r.appendChild(m);
+      }
+      var c = document.createElement("div");
+      c.className = "codice" + (v.barcode === "SENZA" ? " senza" : "");
+      c.textContent = v.barcode === "SENZA" ? "Senza codice" :
+        v.barcode + (/^2\d{6}$/.test(v.barcode) ? "  · banco" + (v.prezzo ? ", etichetta " + scritto(v.prezzo) + " €" : "") : "") + (v.forza ? "  (confermato)" : "");
+      r.appendChild(c);
+      var azioni = document.createElement("div");
+      azioni.className = "azioni";
+      var pulsante = function (testo, classe, azione) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.textContent = testo;
+        if (classe) { b.className = classe; }
+        b.onclick = azione;
+        azioni.appendChild(b);
+      };
+      if (inModifica === v.descrizione) {
+        var campo = document.createElement("input");
+        campo.inputMode = "numeric";
+        campo.autocomplete = "off";
+        campo.placeholder = "Scrivi il codice";
+        campo.value = v.barcode === "SENZA" ? "" : v.barcode;
+        campo.setAttribute("aria-label", "codice a barre di " + v.descrizione);
+        campo.onfocus = function () { editing = true; };
+        campo.onblur = function () { finito(); };
+        r.appendChild(campo);
+        pulsante("Salva", "", function () {
+          var cod = campo.value.replace(/\D/g, "");
+          if (cod.length < 8 && !/^2\d{6}$/.test(cod)) { nota("Un codice a barre ha almeno 8 cifre (7 se è il codice di un articolo del banco, che inizia con 2).", true); return; }
+          if ((cod.length === 12 || cod.length === 13) && !codiceValido(cod)) { nota("Questo codice non torna: ricontrolla le cifre.", true); return; }
+          editing = false;
+          registraSpesa(v.descrizione, cod);
+        });
+        pulsante(inAttesaSpesa === v.descrizione ? "Ti ascolto…" : "Scansiona", "", function () {
+          editing = false;
+          inAttesaSpesa = inAttesaSpesa === v.descrizione ? "" : v.descrizione;
+          if (inAttesaSpesa) { inAttesa = ""; }
+          render();
+          if (inAttesaSpesa) {
+            nota("Passa davanti alla fotocamera il codice giusto di «" + v.descrizione + "».");
+            if (!acceso) { accendi(); }
+            if (camera.scrollIntoView) { camera.scrollIntoView({ block: "center", behavior: "smooth" }); }
+          }
+        });
+        pulsante("Senza codice", "", function () { editing = false; registraSpesa(v.descrizione, "SENZA"); });
+        pulsante("Annulla", "", function () { editing = false; inModifica = ""; inAttesaSpesa = ""; renderSpesa(); });
+      } else {
+        pulsante("Modifica", "", function () { inModifica = v.descrizione; renderSpesa(); });
+        pulsante("Togli", "togli", function () {
+          codaSpesa = codaSpesa.filter(function (x) { return x.descrizione !== v.descrizione; });
+          if (!spesa.elenco.some(function (x) { return x.descrizione === v.descrizione; })) {
+            spesa.elenco.unshift(v.scheda || { descrizione: v.descrizione, prodotto: v.nome === v.descrizione ? "" : v.nome, marca: "", alimento: "", volte: 0, ultima: "" });
+          }
+          if (!codaSpesa.length) { riepilogoAperto = false; }
+          salvaSpesa();
+          render();
+          nota("«" + v.descrizione + "» tolto dal riepilogo: è tornato fra quelli da registrare.");
+        });
+      }
+      r.appendChild(azioni);
+      p.appendChild(r);
+    });
+    var vai = document.createElement("button");
+    vai.type = "button";
+    vai.className = "invia-spesa";
+    vai.id = "invia-davvero";
+    vai.disabled = inSpesa || !!inModifica;
+    vai.textContent = inSpesa ? "Invio in corso…" : (codaSpesa.length === 1 ? "Invia 1 codice" : "Invia " + codaSpesa.length + " codici");
+    vai.style.marginTop = "12px";
+    vai.style.marginBottom = "0";
+    vai.onclick = sincronizzaSpesa;
+    p.appendChild(vai);
+    var chiudi = document.createElement("button");
+    chiudi.type = "button";
+    chiudi.className = "chiudi";
+    chiudi.textContent = "Continua a registrare";
+    chiudi.onclick = function () { riepilogoAperto = false; inModifica = ""; renderSpesa(); };
+    p.appendChild(chiudi);
+    return p;
   }
 
   function renderSpesa() {
@@ -2346,9 +2477,13 @@
     invia.className = "invia-spesa";
     invia.disabled = inSpesa;
     invia.textContent = inSpesa ? "Invio in corso…" :
-      (codaSpesa.length ? "Invia i codici (" + codaSpesa.length + ")" : (spesa.ora ? "Aggiorna l'elenco" : "Carica l'elenco"));
-    invia.onclick = sincronizzaSpesa;
+      (codaSpesa.length ? (riepilogoAperto ? "Chiudi il riepilogo" : "Rivedi e invia (" + codaSpesa.length + ")") : (spesa.ora ? "Aggiorna l'elenco" : "Carica l'elenco"));
+    invia.onclick = function () {
+      if (codaSpesa.length) { riepilogoAperto = !riepilogoAperto; inModifica = ""; renderSpesa(); return; }
+      sincronizzaSpesa();
+    };
     box.appendChild(invia);
+    if (riepilogoAperto && codaSpesa.length) { box.appendChild(riepilogo()); }
 
     dubbiSpesa.forEach(function (x) {
       var r = document.createElement("div");
@@ -2362,7 +2497,9 @@
       sx.appendChild(nome);
       var meta = document.createElement("div");
       meta.className = "meta";
-      meta.textContent = "Il codice " + x.barcode + " è già di " + x.giaDiNome + ". È giusto anche per questo prodotto?";
+      meta.textContent = x.motivo === "PREZZO"
+        ? "Codice del banco " + x.barcode + ": il prezzo sull'etichetta (" + scritto(x.prezzo) + " €) non è quello di nessun acquisto di questo prodotto. È giusto lo stesso?"
+        : "Il codice " + x.barcode + " è già di " + x.giaDiNome + ". È giusto anche per questo prodotto?";
       sx.appendChild(meta);
       testa.appendChild(sx);
       r.appendChild(testa);
